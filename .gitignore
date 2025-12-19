@@ -38,3 +38,6 @@ coverage/
 # Temporary files
 *.tmp
 *.temp
+
+# Sample files (may contain sensitive data)
+samples/*.fgcp
