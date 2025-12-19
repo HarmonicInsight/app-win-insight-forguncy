@@ -429,6 +429,7 @@ async function analyzePages(
 
 /**
  * ページ内の要素（ボタン、数式など）を抽出
+ * 実際のForguncy形式: AttachInfosに "row,col" キーでセル情報が格納
  */
 function extractPageElements(data: ForguncyPageJson): {
   buttons: ButtonInfo[];
@@ -439,37 +440,106 @@ function extractPageElements(data: ForguncyPageJson): {
   const formulas: FormulaInfo[] = [];
   const cellCommands: CellCommandInfo[] = [];
 
-  const cells = data.Cells || {};
+  // 実際のForguncy形式: AttachInfos
+  const attachInfos = (data as unknown as { AttachInfos?: Record<string, unknown> }).AttachInfos || {};
 
-  for (const [cellAddress, cell] of Object.entries(cells)) {
+  for (const [cellAddress, cellData] of Object.entries(attachInfos)) {
+    const cell = cellData as Record<string, unknown>;
+    const cellType = cell.CellType as Record<string, unknown> | undefined;
+
     // 数式を抽出
     if (cell.Formula) {
       formulas.push({
         cell: cellAddress,
-        formula: cell.Formula,
+        formula: String(cell.Formula),
       });
     }
 
-    // ボタンを抽出
-    if (cell.ButtonText && cell.Commands) {
-      buttons.push({
-        name: cell.ButtonText,
-        cell: cellAddress,
-        commands: parseCommands(cell.Commands),
-      });
+    // CellType内のコマンドを抽出
+    if (cellType) {
+      const typeStr = (cellType['$type'] as string) || '';
+
+      // メニュー項目からコマンドを抽出
+      if (typeStr.includes('MenuCellType') || typeStr.includes('ForguncyMenuCellType')) {
+        const items = (cellType.Items as unknown[]) || [];
+        extractMenuItems(items, buttons, cellAddress);
+      }
+
+      // ボタンセルタイプ
+      if (typeStr.includes('ButtonCellType')) {
+        const text = (cellType.Text as string) || (cellType.Content as string) || 'ボタン';
+        const commandList = (cellType.CommandList as ForguncyCommand[]) || [];
+        if (commandList.length > 0) {
+          buttons.push({
+            name: text,
+            cell: cellAddress,
+            commands: parseCommands(commandList),
+          });
+        }
+      }
+
+      // その他のセルコマンド
+      const commandList = (cellType.CommandList as ForguncyCommand[]) || [];
+      if (commandList.length > 0 && !typeStr.includes('ButtonCellType')) {
+        cellCommands.push({
+          cell: cellAddress,
+          event: 'Click',
+          commands: parseCommands(commandList),
+        });
+      }
     }
 
-    // その他のセルコマンドを抽出
-    if (cell.Commands && !cell.ButtonText) {
-      cellCommands.push({
-        cell: cellAddress,
-        event: 'Click',
-        commands: parseCommands(cell.Commands),
-      });
+    // 直接のCommandsプロパティ（旧形式対応）
+    if (cell.Commands) {
+      const commands = cell.Commands as ForguncyCommand[];
+      const buttonText = (cell.ButtonText as string) || '';
+      if (buttonText) {
+        buttons.push({
+          name: buttonText,
+          cell: cellAddress,
+          commands: parseCommands(commands),
+        });
+      } else {
+        cellCommands.push({
+          cell: cellAddress,
+          event: 'Click',
+          commands: parseCommands(commands),
+        });
+      }
     }
   }
 
   return { buttons, formulas, cellCommands };
+}
+
+/**
+ * メニュー項目からコマンドを再帰的に抽出
+ */
+function extractMenuItems(
+  items: unknown[],
+  buttons: ButtonInfo[],
+  baseCell: string
+): void {
+  for (const item of items) {
+    const menuItem = item as {
+      Text?: string;
+      CommandList?: ForguncyCommand[];
+      SubItems?: unknown[];
+    };
+
+    if (menuItem.CommandList && menuItem.CommandList.length > 0) {
+      buttons.push({
+        name: `メニュー: ${menuItem.Text || '(名称なし)'}`,
+        cell: baseCell,
+        commands: parseCommands(menuItem.CommandList),
+      });
+    }
+
+    // サブメニュー項目も再帰的に処理
+    if (menuItem.SubItems && menuItem.SubItems.length > 0) {
+      extractMenuItems(menuItem.SubItems, buttons, baseCell);
+    }
+  }
 }
 
 /**
@@ -483,6 +553,7 @@ function extractWorkflows(tables: TableInfo[]): WorkflowInfo[] {
 
 /**
  * サーバーコマンドを解析
+ * 実際のForguncy形式: パラメータはTriggers[0].Parametersに格納
  */
 async function analyzeServerCommands(
   zip: AdmZip,
@@ -505,12 +576,33 @@ async function analyzeServerCommands(
       const rawCommands = parseCommands(data.Commands || []);
       const commands = flattenCommandsToText(data.Commands || []);
 
-      const parameters: ParameterInfo[] = (data.Parameters || []).map((p) => ({
-        name: p.Name || '',
-        type: extractColumnType(p.Type),
-        required: p.Required || false,
-        defaultValue: p.DefaultValue !== undefined ? String(p.DefaultValue) : undefined,
-      }));
+      // パラメータはTriggersの中にある（実際のForguncy形式）
+      const parameters: ParameterInfo[] = [];
+      const triggers = (data as unknown as { Triggers?: unknown[] }).Triggers || [];
+      if (triggers.length > 0) {
+        const firstTrigger = triggers[0] as { Parameters?: Array<{ Name?: string; DataValidationInfo?: { NumberType?: number } }> };
+        const triggerParams = firstTrigger.Parameters || [];
+        for (const p of triggerParams) {
+          parameters.push({
+            name: p.Name || '',
+            type: inferParameterType(p.DataValidationInfo),
+            required: true, // Forguncyでは基本的に必須
+            defaultValue: undefined,
+          });
+        }
+      }
+
+      // 旧形式のParametersも確認
+      if (parameters.length === 0 && data.Parameters) {
+        for (const p of data.Parameters) {
+          parameters.push({
+            name: p.Name || '',
+            type: extractColumnType(p.Type),
+            required: p.Required || false,
+            defaultValue: p.DefaultValue !== undefined ? String(p.DefaultValue) : undefined,
+          });
+        }
+      }
 
       serverCommands.push({
         name: data.Name || path.basename(entry.entryName, '.json'),
@@ -526,6 +618,25 @@ async function analyzeServerCommands(
   }
 
   return serverCommands;
+}
+
+/**
+ * DataValidationInfoからパラメータ型を推測
+ */
+function inferParameterType(validationInfo?: { NumberType?: number }): string {
+  if (!validationInfo) return 'Text';
+
+  // NumberTypeに基づいて型を推測
+  switch (validationInfo.NumberType) {
+    case 4: // Date
+      return 'DateTime';
+    case 1: // Integer
+      return 'Integer';
+    case 2: // Decimal
+      return 'Decimal';
+    default:
+      return 'Text';
+  }
 }
 
 /**
