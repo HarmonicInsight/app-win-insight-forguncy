@@ -1,4 +1,5 @@
 import { useState, useCallback, DragEvent } from 'react';
+import { useI18n } from '../hooks/useI18n';
 
 interface Props {
   selectedFile: string | null;
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export default function FileDropZone({ selectedFile, onFileSelect, disabled }: Props) {
+  const { t } = useI18n();
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDragEnter = useCallback((e: DragEvent) => {
@@ -45,10 +47,10 @@ export default function FileDropZone({ selectedFile, onFileSelect, disabled }: P
           onFileSelect(filePath);
         }
       } else {
-        alert('.fgcp ファイルを選択してください');
+        alert(t('errors.invalidFile'));
       }
     }
-  }, [disabled, onFileSelect]);
+  }, [disabled, onFileSelect, t]);
 
   const handleClick = useCallback(async () => {
     if (disabled) return;
@@ -90,12 +92,12 @@ export default function FileDropZone({ selectedFile, onFileSelect, disabled }: P
               d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
-          <p className="text-lg font-medium text-gray-700">選択されたファイル</p>
+          <p className="text-lg font-medium text-gray-700">{t('fileSelect.selected')}</p>
           <p className="mt-2 text-indigo-600 font-mono text-sm break-all px-4">
             {fileName}
           </p>
           <p className="mt-4 text-sm text-gray-500">
-            クリックまたはドロップで変更
+            {t('fileSelect.changeFile')}
           </p>
         </div>
       ) : (
@@ -114,13 +116,13 @@ export default function FileDropZone({ selectedFile, onFileSelect, disabled }: P
             />
           </svg>
           <p className="text-lg font-medium text-gray-700">
-            プロジェクトファイルをドロップ
+            {t('fileSelect.dropzone')}
           </p>
           <p className="mt-2 text-gray-500">
-            または <span className="text-indigo-600 underline">クリックして選択</span>
+            {t('fileSelect.orClick')}
           </p>
           <p className="mt-4 text-sm text-gray-400">
-            対応形式: .fgcp (Forguncyプロジェクトファイル)
+            {t('fileSelect.supportedFormat')}
           </p>
         </div>
       )}

@@ -1,3 +1,5 @@
+import { useI18n } from '../hooks/useI18n';
+
 interface AnalysisResult {
   projectName: string;
   summary: {
@@ -25,6 +27,7 @@ interface Props {
 }
 
 export default function ResultsSummary({ analysisResult, reviewResult }: Props) {
+  const { t } = useI18n();
   const summary = analysisResult.summary;
 
   return (
@@ -43,7 +46,7 @@ export default function ResultsSummary({ analysisResult, reviewResult }: Props) 
             d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
           />
         </svg>
-        解析結果
+        {t('analysis.results')}
       </h2>
 
       {/* プロジェクト統計 */}
@@ -59,7 +62,7 @@ export default function ResultsSummary({ analysisResult, reviewResult }: Props) 
               />
             </svg>
           }
-          label="テーブル"
+          label={t('analysis.tables')}
           value={summary.tableCount}
           color="blue"
         />
@@ -74,7 +77,7 @@ export default function ResultsSummary({ analysisResult, reviewResult }: Props) 
               />
             </svg>
           }
-          label="画面"
+          label={t('analysis.pages')}
           value={summary.pageCount}
           color="green"
         />
@@ -89,7 +92,7 @@ export default function ResultsSummary({ analysisResult, reviewResult }: Props) 
               />
             </svg>
           }
-          label="ワークフロー"
+          label={t('analysis.workflows')}
           value={summary.workflowCount}
           color="purple"
         />
@@ -112,14 +115,14 @@ export default function ResultsSummary({ analysisResult, reviewResult }: Props) 
                 d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
               />
             </svg>
-            検出された問題
+            {t('review.issues')}
           </h3>
           <div className="flex items-center space-x-4">
-            <IssueBadge severity="high" count={reviewResult.summary.high} />
-            <IssueBadge severity="medium" count={reviewResult.summary.medium} />
-            <IssueBadge severity="low" count={reviewResult.summary.low} />
+            <IssueBadge severity="high" count={reviewResult.summary.high} label={t('review.high')} />
+            <IssueBadge severity="medium" count={reviewResult.summary.medium} label={t('review.medium')} />
+            <IssueBadge severity="low" count={reviewResult.summary.low} label={t('review.low')} />
             <div className="text-sm text-gray-500 ml-auto">
-              合計: {reviewResult.summary.total}件
+              {t('review.total')}: {reviewResult.summary.total}
             </div>
           </div>
         </div>
@@ -158,33 +161,31 @@ function StatCard({ icon, label, value, color }: StatCardProps) {
 interface IssueBadgeProps {
   severity: 'high' | 'medium' | 'low';
   count: number;
+  label: string;
 }
 
-function IssueBadge({ severity, count }: IssueBadgeProps) {
+function IssueBadge({ severity, count, label }: IssueBadgeProps) {
   const config = {
     high: {
       bg: 'bg-red-100',
       text: 'text-red-800',
-      label: 'HIGH',
     },
     medium: {
       bg: 'bg-orange-100',
       text: 'text-orange-800',
-      label: 'MEDIUM',
     },
     low: {
       bg: 'bg-yellow-100',
       text: 'text-yellow-800',
-      label: 'LOW',
     },
   };
 
-  const { bg, text, label } = config[severity];
+  const { bg, text } = config[severity];
 
   return (
     <div className={`px-3 py-1 rounded-full ${bg}`}>
       <span className={`text-sm font-medium ${text}`}>
-        {label}: {count}件
+        {label}: {count}
       </span>
     </div>
   );

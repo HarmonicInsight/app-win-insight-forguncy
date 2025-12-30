@@ -4,8 +4,12 @@ import AnalysisOptions from './components/AnalysisOptions';
 import ProgressBar from './components/ProgressBar';
 import ResultsSummary from './components/ResultsSummary';
 import OutputActions from './components/OutputActions';
-import Header from './components/Header';
+import LicensePanel from './components/LicensePanel';
+import LanguageSelector from './components/LanguageSelector';
 import { useAnalysis } from './hooks/useAnalysis';
+import { useI18n } from './hooks/useI18n';
+import { useLicense } from './hooks/useLicense';
+import { PRODUCT_CONFIG } from './common/config/products';
 
 export interface AnalysisOptionsState {
   generateSpec: boolean;
@@ -15,6 +19,9 @@ export interface AnalysisOptionsState {
 }
 
 function App() {
+  const { t } = useI18n();
+  const { license, canUseFeature, getTierName } = useLicense();
+
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [outputFolder, setOutputFolder] = useState<string>('');
   const [options, setOptions] = useState<AnalysisOptionsState>({
@@ -23,6 +30,7 @@ function App() {
     orgAnalysis: true,
     fixGuide: true,
   });
+  const [showLicensePanel, setShowLicensePanel] = useState(false);
 
   const {
     isAnalyzing,
@@ -55,8 +63,17 @@ function App() {
 
   const handleStartAnalysis = useCallback(async () => {
     if (!selectedFile) return;
-    await startAnalysis(selectedFile, options);
-  }, [selectedFile, options, startAnalysis]);
+
+    // ライセンスに基づいてオプションを調整
+    const adjustedOptions = {
+      ...options,
+      codeReview: options.codeReview && canUseFeature('codeReview'),
+      orgAnalysis: options.orgAnalysis && canUseFeature('orgAnalysis'),
+      fixGuide: options.fixGuide && canUseFeature('fixGuide'),
+    };
+
+    await startAnalysis(selectedFile, adjustedOptions);
+  }, [selectedFile, options, startAnalysis, canUseFeature]);
 
   const handleSelectOutputFolder = async () => {
     const folder = await window.electronAPI.selectOutputFolder();
@@ -71,10 +88,42 @@ function App() {
     await window.electronAPI.saveSettings({ outputFolder, options: newOptions });
   };
 
+  // 機能が制限されているかチェック
+  const isFeatureRestricted = (feature: keyof AnalysisOptionsState) => {
+    if (feature === 'generateSpec') return false;
+    if (!license) return false;
+    const featureMap: Record<string, keyof typeof license.features> = {
+      codeReview: 'codeReview',
+      orgAnalysis: 'orgAnalysis',
+      fixGuide: 'fixGuide',
+    };
+    return !canUseFeature(featureMap[feature]);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-4">
       <div className="max-w-4xl mx-auto">
-        <Header />
+        {/* ヘッダー */}
+        <header className="mb-8">
+          <div className="flex items-center justify-between mb-2">
+            <h1 className="text-4xl font-bold text-white drop-shadow-lg">
+              {t('app.title')}
+            </h1>
+            <div className="flex items-center gap-3">
+              <LanguageSelector />
+              <button
+                onClick={() => setShowLicensePanel(true)}
+                className="flex items-center gap-2 px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+                {getTierName()}
+              </button>
+            </div>
+          </div>
+          <p className="text-white/80">{t('app.subtitle')}</p>
+        </header>
 
         <main className="bg-white rounded-2xl shadow-2xl p-8 animate-fadeIn">
           {/* ファイルドロップゾーン */}
@@ -89,15 +138,21 @@ function App() {
             options={options}
             onChange={handleOptionsChange}
             disabled={isAnalyzing}
+            restrictedFeatures={{
+              codeReview: isFeatureRestricted('codeReview'),
+              orgAnalysis: isFeatureRestricted('orgAnalysis'),
+              fixGuide: isFeatureRestricted('fixGuide'),
+            }}
+            onUpgradeClick={() => setShowLicensePanel(true)}
           />
 
           {/* 出力フォルダ設定 */}
           <div className="mt-6 p-4 bg-gray-50 rounded-lg">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-medium text-gray-700">出力フォルダ</h3>
+                <h3 className="text-sm font-medium text-gray-700">{t('output.folder')}</h3>
                 <p className="text-sm text-gray-500 truncate max-w-md">
-                  {outputFolder || '未設定'}
+                  {outputFolder || t('output.notSet')}
                 </p>
               </div>
               <button
@@ -105,7 +160,7 @@ function App() {
                 disabled={isAnalyzing}
                 className="px-4 py-2 text-sm bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors disabled:opacity-50"
               >
-                変更
+                {t('output.change')}
               </button>
             </div>
           </div>
@@ -143,10 +198,10 @@ function App() {
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                     />
                   </svg>
-                  解析中...
+                  {t('analysis.analyzing')}
                 </span>
               ) : (
-                '解析開始'
+                t('analysis.start')
               )}
             </button>
           </div>
@@ -195,9 +250,15 @@ function App() {
 
         {/* フッター */}
         <footer className="text-center mt-6 text-white/70 text-sm">
-          <p>Forguncy Analyzer Pro v1.0.0</p>
-          <p className="mt-1">Powered by HarmonicInsight</p>
+          <p>{PRODUCT_CONFIG.name} v{PRODUCT_CONFIG.version}</p>
+          <p className="mt-1">{t('app.footer')}</p>
         </footer>
+
+        {/* ライセンスパネル */}
+        <LicensePanel
+          isOpen={showLicensePanel}
+          onClose={() => setShowLicensePanel(false)}
+        />
       </div>
     </div>
   );

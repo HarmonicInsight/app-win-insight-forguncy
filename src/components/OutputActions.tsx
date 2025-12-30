@@ -1,9 +1,13 @@
+import { useI18n } from '../hooks/useI18n';
+
 interface Props {
   outputDir: string;
   generatedFiles: string[];
 }
 
 export default function OutputActions({ outputDir, generatedFiles }: Props) {
+  const { t } = useI18n();
+
   const handleOpenFolder = async () => {
     await window.electronAPI.openFolder(outputDir);
   };
@@ -17,7 +21,7 @@ export default function OutputActions({ outputDir, generatedFiles }: Props) {
   };
 
   const getFileIcon = (fileName: string) => {
-    if (fileName.includes('仕様書')) {
+    if (fileName.includes('仕様書') || fileName.includes('Spec')) {
       return (
         <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
@@ -29,7 +33,7 @@ export default function OutputActions({ outputDir, generatedFiles }: Props) {
         </svg>
       );
     }
-    if (fileName.includes('レビュー')) {
+    if (fileName.includes('レビュー') || fileName.includes('Review')) {
       return (
         <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
@@ -64,7 +68,7 @@ export default function OutputActions({ outputDir, generatedFiles }: Props) {
             d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"
           />
         </svg>
-        生成されたファイル
+        {t('output.generatedFiles')}
       </h3>
 
       <div className="space-y-2">
@@ -107,7 +111,7 @@ export default function OutputActions({ outputDir, generatedFiles }: Props) {
             d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"
           />
         </svg>
-        出力フォルダを開く
+        {t('output.openFolder')}
       </button>
     </div>
   );

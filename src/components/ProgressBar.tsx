@@ -1,9 +1,13 @@
+import { useI18n } from '../hooks/useI18n';
+
 interface Props {
   progress: number;
   message: string;
 }
 
 export default function ProgressBar({ progress, message }: Props) {
+  const { t } = useI18n();
+
   return (
     <div className="mt-6 animate-fadeIn">
       <div className="flex items-center justify-between mb-2">
@@ -37,7 +41,7 @@ export default function ProgressBar({ progress, message }: Props) {
             d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
           />
         </svg>
-        処理中...
+        {t('common.processing')}
       </div>
     </div>
   );
