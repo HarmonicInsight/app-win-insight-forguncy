@@ -31,8 +31,8 @@ export const ja = {
 
   // アプリケーション
   app: {
-    title: 'Forguncy Analyzer Pro',
-    subtitle: 'Forguncyプロジェクトを解析し、仕様書・レビューレポートを自動生成',
+    title: 'Forguncy Analyzer',
+    subtitle: 'Forguncyプロジェクトを解析し、仕様書を自動生成',
     footer: 'Powered by HarmonicInsight',
   },
 

@@ -1,8 +1,8 @@
 {
-  "name": "forguncy-analyzer-pro",
-  "productName": "Forguncy Analyzer Pro",
+  "name": "forguncy-analyzer",
+  "productName": "Forguncy Analyzer",
   "version": "1.0.0",
-  "description": "Forguncyプロジェクトファイル(.fgcp)を解析し、仕様書・レビューレポートを自動生成するツール",
+  "description": "Forguncyプロジェクトファイル(.fgcp)を解析し、仕様書を自動生成するツール",
   "main": "dist/electron/main.js",
   "author": "HarmonicInsight",
   "license": "MIT",
@@ -41,8 +41,8 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.harmonicinsight.forguncy-analyzer-pro",
-    "productName": "Forguncy Analyzer Pro",
+    "appId": "com.harmonicinsight.forguncy-analyzer",
+    "productName": "Forguncy Analyzer",
     "directories": {
       "output": "release"
     },

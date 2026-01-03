@@ -23,7 +23,7 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
     },
     icon: path.join(__dirname, '../assets/icon.png'),
-    title: 'Forguncy Analyzer Pro',
+    title: 'Forguncy Analyzer',
   });
 
   if (isDev) {

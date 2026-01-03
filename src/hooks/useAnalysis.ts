@@ -1,35 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { AnalysisOptionsState } from '../App';
 
-interface AnalysisResult {
-  projectName: string;
-  summary: {
-    tableCount: number;
-    pageCount: number;
-    workflowCount: number;
-    serverCommandCount: number;
-    totalColumns: number;
-    totalRelations: number;
-  };
-}
-
-interface ReviewResult {
-  summary: {
-    high: number;
-    medium: number;
-    low: number;
-    total: number;
-  };
-}
-
-interface AnalysisResponse {
-  success: boolean;
-  analysisResult?: AnalysisResult;
-  reviewResult?: ReviewResult;
-  outputDir?: string;
-  generatedFiles?: string[];
-  error?: string;
-}
+// 型はvite-env.d.tsでグローバルに定義されている
 
 export function useAnalysis() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);

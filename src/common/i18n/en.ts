@@ -31,8 +31,8 @@ export const en = {
 
   // Application
   app: {
-    title: 'Forguncy Analyzer Pro',
-    subtitle: 'Analyze Forguncy projects and auto-generate specifications & review reports',
+    title: 'Forguncy Analyzer',
+    subtitle: 'Analyze Forguncy projects and auto-generate specifications',
     footer: 'Powered by HarmonicInsight',
   },
 
