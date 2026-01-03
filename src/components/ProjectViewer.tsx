@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 
 // 型はvite-env.d.tsでグローバルに定義されている
 
@@ -8,9 +8,44 @@ interface Props {
 
 type ViewSection = 'tables' | 'pages' | 'serverCommands' | 'workflows';
 
+// コピー機能
+function CopyButton({ text, className = '' }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      console.error('Copy failed:', err);
+    }
+  }, [text]);
+
+  return (
+    <button
+      onClick={handleCopy}
+      className={`p-1 rounded hover:bg-gray-200 transition-colors ${className}`}
+      title="コピー"
+    >
+      {copied ? (
+        <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        </svg>
+      ) : (
+        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 export default function ProjectViewer({ analysisResult }: Props) {
   const [activeSection, setActiveSection] = useState<ViewSection>('tables');
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [hideEmptyPages, setHideEmptyPages] = useState(false);
 
   const toggleItem = (id: string) => {
     const newExpanded = new Set(expandedItems);
@@ -21,6 +56,8 @@ export default function ProjectViewer({ analysisResult }: Props) {
     }
     setExpandedItems(newExpanded);
   };
+
+  const pagesWithContent = analysisResult.pages.filter(p => p.buttons.length > 0 || p.formulas.length > 0);
 
   const sections: { key: ViewSection; label: string; count: number; icon: JSX.Element }[] = [
     {
@@ -36,7 +73,7 @@ export default function ProjectViewer({ analysisResult }: Props) {
     {
       key: 'pages',
       label: '画面',
-      count: analysisResult.pages.length,
+      count: hideEmptyPages ? pagesWithContent.length : analysisResult.pages.length,
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -66,7 +103,7 @@ export default function ProjectViewer({ analysisResult }: Props) {
   ];
 
   return (
-    <div className="flex h-[600px] border border-gray-200 rounded-lg overflow-hidden">
+    <div className="flex h-[600px] border border-gray-200 rounded-lg overflow-hidden select-text">
       {/* サイドバー */}
       <div className="w-48 bg-gray-50 border-r border-gray-200 flex-shrink-0">
         {sections.map((section) => (
@@ -94,7 +131,13 @@ export default function ProjectViewer({ analysisResult }: Props) {
           <TableList tables={analysisResult.tables} expandedItems={expandedItems} toggleItem={toggleItem} />
         )}
         {activeSection === 'pages' && (
-          <PageList pages={analysisResult.pages} expandedItems={expandedItems} toggleItem={toggleItem} />
+          <PageList
+            pages={analysisResult.pages}
+            expandedItems={expandedItems}
+            toggleItem={toggleItem}
+            hideEmpty={hideEmptyPages}
+            onToggleHideEmpty={() => setHideEmptyPages(!hideEmptyPages)}
+          />
         )}
         {activeSection === 'serverCommands' && (
           <ServerCommandList commands={analysisResult.serverCommands} expandedItems={expandedItems} toggleItem={toggleItem} />
@@ -109,6 +152,21 @@ export default function ProjectViewer({ analysisResult }: Props) {
 
 // テーブル一覧
 function TableList({ tables, expandedItems, toggleItem }: { tables: TableInfo[]; expandedItems: Set<string>; toggleItem: (id: string) => void }) {
+  const formatTableAsText = (table: TableInfo) => {
+    let text = `テーブル: ${table.name}\n`;
+    text += `カラム:\n`;
+    table.columns.forEach(col => {
+      text += `  - ${col.name} (${col.type})${col.required ? ' [必須]' : ''}${col.unique ? ' [ユニーク]' : ''}\n`;
+    });
+    if (table.relations.length > 0) {
+      text += `リレーション:\n`;
+      table.relations.forEach(rel => {
+        text += `  - ${rel.sourceColumn} → ${rel.targetTable}.${rel.targetColumn} (${rel.type})\n`;
+      });
+    }
+    return text;
+  };
+
   return (
     <div className="space-y-2">
       {tables.map((table, index) => {
@@ -116,16 +174,19 @@ function TableList({ tables, expandedItems, toggleItem }: { tables: TableInfo[];
         const isExpanded = expandedItems.has(id);
         return (
           <div key={id} className="border border-gray-200 rounded-lg overflow-hidden">
-            <button
-              onClick={() => toggleItem(id)}
-              className="w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 flex items-center gap-2 text-left transition-colors"
-            >
-              <svg className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-              <span className="font-medium text-gray-800">{table.name}</span>
-              <span className="text-xs text-gray-500 ml-auto">{table.columns.length}列</span>
-            </button>
+            <div className="flex items-center bg-gray-50 hover:bg-gray-100 transition-colors">
+              <button
+                onClick={() => toggleItem(id)}
+                className="flex-1 px-4 py-3 flex items-center gap-2 text-left"
+              >
+                <svg className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <span className="font-medium text-gray-800">{table.name}</span>
+                <span className="text-xs text-gray-500 ml-auto">{table.columns.length}列</span>
+              </button>
+              <CopyButton text={formatTableAsText(table)} className="mr-2" />
+            </div>
             {isExpanded && (
               <div className="p-4 border-t border-gray-200 bg-white">
                 <h4 className="text-xs font-medium text-gray-500 mb-2">カラム</h4>
@@ -140,7 +201,7 @@ function TableList({ tables, expandedItems, toggleItem }: { tables: TableInfo[];
                   </thead>
                   <tbody>
                     {table.columns.map((col, i) => (
-                      <tr key={i} className="border-b border-gray-100 last:border-0">
+                      <tr key={i} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                         <td className="py-1.5 font-mono text-indigo-600">{col.name}</td>
                         <td className="py-1.5 text-gray-600">{col.type}</td>
                         <td className="py-1.5">{col.required ? '○' : ''}</td>
@@ -169,36 +230,89 @@ function TableList({ tables, expandedItems, toggleItem }: { tables: TableInfo[];
           </div>
         );
       })}
-      {tables.length === 0 && <p className="text-gray-500 text-center py-8">テーブルがありません</p>}
+      {tables.length === 0 && <p className="text-gray-300 text-center py-8">テーブルがありません</p>}
     </div>
   );
 }
 
 // 画面一覧
-function PageList({ pages, expandedItems, toggleItem }: { pages: PageInfo[]; expandedItems: Set<string>; toggleItem: (id: string) => void }) {
+function PageList({ pages, expandedItems, toggleItem, hideEmpty, onToggleHideEmpty }: {
+  pages: PageInfo[];
+  expandedItems: Set<string>;
+  toggleItem: (id: string) => void;
+  hideEmpty: boolean;
+  onToggleHideEmpty: () => void;
+}) {
+  const filteredPages = hideEmpty ? pages.filter(p => p.buttons.length > 0 || p.formulas.length > 0) : pages;
+  const emptyCount = pages.length - pages.filter(p => p.buttons.length > 0 || p.formulas.length > 0).length;
+
+  const formatPageAsText = (page: PageInfo) => {
+    let text = `画面: ${page.name}${page.type === 'masterPage' ? ' [マスターページ]' : ''}\n`;
+    if (page.buttons.length > 0) {
+      text += `ボタン:\n`;
+      page.buttons.forEach(btn => {
+        text += `  - ${btn.name}\n`;
+        btn.commands.forEach(cmd => {
+          text += `    • ${cmd.description}\n`;
+        });
+      });
+    }
+    if (page.formulas.length > 0) {
+      text += `数式:\n`;
+      page.formulas.forEach(f => {
+        text += `  - ${f.cell} = ${f.formula}\n`;
+      });
+    }
+    return text;
+  };
+
   return (
     <div className="space-y-2">
-      {pages.map((page, index) => {
+      {/* フィルタトグル */}
+      <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-100">
+        <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600">
+          <input
+            type="checkbox"
+            checked={hideEmpty}
+            onChange={onToggleHideEmpty}
+            className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          空の画面を非表示
+          {emptyCount > 0 && <span className="text-xs text-gray-400">({emptyCount}件)</span>}
+        </label>
+      </div>
+
+      {filteredPages.map((page, index) => {
         const id = `page-${index}`;
         const isExpanded = expandedItems.has(id);
+        const hasContent = page.buttons.length > 0 || page.formulas.length > 0;
         return (
-          <div key={id} className="border border-gray-200 rounded-lg overflow-hidden">
-            <button
-              onClick={() => toggleItem(id)}
-              className="w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 flex items-center gap-2 text-left transition-colors"
-            >
-              <svg className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-              <span className="font-medium text-gray-800">{page.name}</span>
-              {page.type === 'masterPage' && (
-                <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">マスター</span>
-              )}
-              <span className="text-xs text-gray-500 ml-auto">
-                {page.buttons.length > 0 && `${page.buttons.length}ボタン`}
-                {page.formulas.length > 0 && ` ${page.formulas.length}数式`}
-              </span>
-            </button>
+          <div key={id} className={`border rounded-lg overflow-hidden ${hasContent ? 'border-gray-200' : 'border-gray-100'}`}>
+            <div className={`flex items-center transition-colors ${hasContent ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-50/50 hover:bg-gray-100/50'}`}>
+              <button
+                onClick={() => toggleItem(id)}
+                className="flex-1 px-4 py-3 flex items-center gap-2 text-left"
+              >
+                <svg className={`w-4 h-4 transition-transform ${hasContent ? 'text-gray-400' : 'text-gray-200'} ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <span className={`font-medium ${hasContent ? 'text-gray-800' : 'text-gray-400'}`}>{page.name}</span>
+                {page.type === 'masterPage' && (
+                  <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">マスター</span>
+                )}
+                <span className={`text-xs ml-auto ${hasContent ? 'text-gray-500' : 'text-gray-300'}`}>
+                  {hasContent ? (
+                    <>
+                      {page.buttons.length > 0 && `${page.buttons.length}ボタン`}
+                      {page.formulas.length > 0 && ` ${page.formulas.length}数式`}
+                    </>
+                  ) : (
+                    'コンテンツなし'
+                  )}
+                </span>
+              </button>
+              {hasContent && <CopyButton text={formatPageAsText(page)} className="mr-2" />}
+            </div>
             {isExpanded && (
               <div className="p-4 border-t border-gray-200 bg-white">
                 {page.buttons.length > 0 && (
@@ -237,21 +351,36 @@ function PageList({ pages, expandedItems, toggleItem }: { pages: PageInfo[]; exp
                     </div>
                   </>
                 )}
-                {page.buttons.length === 0 && page.formulas.length === 0 && (
-                  <p className="text-sm text-gray-400">コンテンツなし</p>
+                {!hasContent && (
+                  <p className="text-sm text-gray-300 italic">コンテンツなし</p>
                 )}
               </div>
             )}
           </div>
         );
       })}
-      {pages.length === 0 && <p className="text-gray-500 text-center py-8">画面がありません</p>}
+      {filteredPages.length === 0 && <p className="text-gray-300 text-center py-8">画面がありません</p>}
     </div>
   );
 }
 
 // サーバーコマンド一覧
 function ServerCommandList({ commands, expandedItems, toggleItem }: { commands: ServerCommandInfo[]; expandedItems: Set<string>; toggleItem: (id: string) => void }) {
+  const formatCommandAsText = (cmd: ServerCommandInfo) => {
+    let text = `サーバーコマンド: ${cmd.name}\n`;
+    if (cmd.parameters && cmd.parameters.length > 0) {
+      text += `パラメータ:\n`;
+      cmd.parameters.forEach(p => {
+        text += `  - ${p.name}: ${p.type}${p.required ? ' [必須]' : ''}\n`;
+      });
+    }
+    text += `処理内容:\n`;
+    cmd.commands.forEach(c => {
+      text += `  ${c}\n`;
+    });
+    return text;
+  };
+
   return (
     <div className="space-y-2">
       {commands.map((cmd, index) => {
@@ -259,16 +388,19 @@ function ServerCommandList({ commands, expandedItems, toggleItem }: { commands: 
         const isExpanded = expandedItems.has(id);
         return (
           <div key={id} className="border border-gray-200 rounded-lg overflow-hidden">
-            <button
-              onClick={() => toggleItem(id)}
-              className="w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 flex items-center gap-2 text-left transition-colors"
-            >
-              <svg className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-              <span className="font-medium text-gray-800">{cmd.name}</span>
-              <span className="text-xs text-gray-500 ml-auto">{cmd.commands.length}行</span>
-            </button>
+            <div className="flex items-center bg-gray-50 hover:bg-gray-100 transition-colors">
+              <button
+                onClick={() => toggleItem(id)}
+                className="flex-1 px-4 py-3 flex items-center gap-2 text-left"
+              >
+                <svg className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <span className="font-medium text-gray-800">{cmd.name}</span>
+                <span className="text-xs text-gray-500 ml-auto">{cmd.commands.length}行</span>
+              </button>
+              <CopyButton text={formatCommandAsText(cmd)} className="mr-2" />
+            </div>
             {isExpanded && (
               <div className="p-4 border-t border-gray-200 bg-white">
                 {cmd.parameters && cmd.parameters.length > 0 && (
@@ -284,7 +416,10 @@ function ServerCommandList({ commands, expandedItems, toggleItem }: { commands: 
                     </div>
                   </>
                 )}
-                <h4 className="text-xs font-medium text-gray-500 mb-2">処理内容</h4>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-medium text-gray-500">処理内容</h4>
+                  <CopyButton text={cmd.commands.join('\n')} />
+                </div>
                 <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-auto max-h-60 font-mono">
                   {cmd.commands.slice(0, 30).join('\n')}
                   {cmd.commands.length > 30 && `\n\n... 他${cmd.commands.length - 30}行`}
@@ -294,13 +429,29 @@ function ServerCommandList({ commands, expandedItems, toggleItem }: { commands: 
           </div>
         );
       })}
-      {commands.length === 0 && <p className="text-gray-500 text-center py-8">サーバーコマンドがありません</p>}
+      {commands.length === 0 && <p className="text-gray-300 text-center py-8">サーバーコマンドがありません</p>}
     </div>
   );
 }
 
 // ワークフロー一覧
 function WorkflowList({ workflows, expandedItems, toggleItem }: { workflows: WorkflowInfo[]; expandedItems: Set<string>; toggleItem: (id: string) => void }) {
+  const formatWorkflowAsText = (wf: WorkflowInfo) => {
+    let text = `ワークフロー: ${wf.tableName}\n`;
+    text += `状態:\n`;
+    wf.states.forEach(state => {
+      text += `  - ${state.name}${state.isInitial ? ' [開始]' : ''}${state.isFinal ? ' [終了]' : ''}\n`;
+    });
+    text += `遷移:\n`;
+    wf.transitions.forEach(t => {
+      text += `  - ${t.fromState} → ${t.toState}: ${t.action}\n`;
+      if (t.assignees.length > 0) {
+        text += `    担当: ${t.assignees.map(a => `${a.type}:${a.value}`).join(', ')}\n`;
+      }
+    });
+    return text;
+  };
+
   return (
     <div className="space-y-2">
       {workflows.map((wf, index) => {
@@ -308,16 +459,19 @@ function WorkflowList({ workflows, expandedItems, toggleItem }: { workflows: Wor
         const isExpanded = expandedItems.has(id);
         return (
           <div key={id} className="border border-gray-200 rounded-lg overflow-hidden">
-            <button
-              onClick={() => toggleItem(id)}
-              className="w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 flex items-center gap-2 text-left transition-colors"
-            >
-              <svg className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-              <span className="font-medium text-gray-800">{wf.tableName}</span>
-              <span className="text-xs text-gray-500 ml-auto">{wf.states.length}状態 {wf.transitions.length}遷移</span>
-            </button>
+            <div className="flex items-center bg-gray-50 hover:bg-gray-100 transition-colors">
+              <button
+                onClick={() => toggleItem(id)}
+                className="flex-1 px-4 py-3 flex items-center gap-2 text-left"
+              >
+                <svg className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <span className="font-medium text-gray-800">{wf.tableName}</span>
+                <span className="text-xs text-gray-500 ml-auto">{wf.states.length}状態 {wf.transitions.length}遷移</span>
+              </button>
+              <CopyButton text={formatWorkflowAsText(wf)} className="mr-2" />
+            </div>
             {isExpanded && (
               <div className="p-4 border-t border-gray-200 bg-white">
                 <h4 className="text-xs font-medium text-gray-500 mb-2">状態</h4>
@@ -362,7 +516,7 @@ function WorkflowList({ workflows, expandedItems, toggleItem }: { workflows: Wor
           </div>
         );
       })}
-      {workflows.length === 0 && <p className="text-gray-500 text-center py-8">ワークフローがありません</p>}
+      {workflows.length === 0 && <p className="text-gray-300 text-center py-8">ワークフローがありません</p>}
     </div>
   );
 }
