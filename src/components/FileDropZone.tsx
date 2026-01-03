@@ -70,17 +70,17 @@ export default function FileDropZone({ selectedFile, onFileSelect, disabled }: P
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       className={`
-        relative border-2 border-dashed rounded-xl p-12 text-center cursor-pointer
+        relative border-2 border-dashed p-12 text-center cursor-pointer
         transition-all duration-200
-        ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-indigo-400 hover:bg-indigo-50'}
-        ${isDragging ? 'border-indigo-500 bg-indigo-100 scale-[1.02]' : 'border-gray-300 bg-gray-50'}
-        ${selectedFile ? 'border-green-400 bg-green-50' : ''}
+        ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-orange-400 hover:bg-orange-50'}
+        ${isDragging ? 'border-orange-500 bg-orange-50' : 'border-gray-300 bg-gray-50'}
+        ${selectedFile ? 'border-green-500 bg-green-50' : ''}
       `}
     >
       {selectedFile ? (
         <div className="flex flex-col items-center">
           <svg
-            className="w-16 h-16 text-green-500 mb-4"
+            className="w-12 h-12 text-green-500 mb-4"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -92,8 +92,8 @@ export default function FileDropZone({ selectedFile, onFileSelect, disabled }: P
               d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
-          <p className="text-lg font-medium text-gray-700">{t('fileSelect.selected')}</p>
-          <p className="mt-2 text-indigo-600 font-mono text-sm break-all px-4">
+          <p className="text-base font-medium text-gray-900">{t('fileSelect.selected')}</p>
+          <p className="mt-2 text-orange-600 font-mono text-sm break-all px-4">
             {fileName}
           </p>
           <p className="mt-4 text-sm text-gray-500">
@@ -103,7 +103,7 @@ export default function FileDropZone({ selectedFile, onFileSelect, disabled }: P
       ) : (
         <div className="flex flex-col items-center">
           <svg
-            className={`w-16 h-16 mb-4 ${isDragging ? 'text-indigo-500' : 'text-gray-400'}`}
+            className={`w-12 h-12 mb-4 ${isDragging ? 'text-orange-500' : 'text-gray-400'}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -115,7 +115,7 @@ export default function FileDropZone({ selectedFile, onFileSelect, disabled }: P
               d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
             />
           </svg>
-          <p className="text-lg font-medium text-gray-700">
+          <p className="text-base font-medium text-gray-900">
             {t('fileSelect.dropzone')}
           </p>
           <p className="mt-2 text-gray-500">

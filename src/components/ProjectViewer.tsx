@@ -103,7 +103,7 @@ export default function ProjectViewer({ analysisResult }: Props) {
   ];
 
   return (
-    <div className="flex h-[600px] border border-gray-200 rounded-lg overflow-hidden select-text">
+    <div className="flex h-[600px] border border-gray-200 overflow-hidden select-text">
       {/* サイドバー */}
       <div className="w-48 bg-gray-50 border-r border-gray-200 flex-shrink-0">
         {sections.map((section) => (
@@ -112,7 +112,7 @@ export default function ProjectViewer({ analysisResult }: Props) {
             onClick={() => setActiveSection(section.key)}
             className={`w-full px-4 py-3 text-left text-sm flex items-center gap-2 transition-colors ${
               activeSection === section.key
-                ? 'bg-indigo-100 text-indigo-700 border-r-2 border-indigo-600'
+                ? 'bg-orange-50 text-orange-600 border-r-2 border-orange-500'
                 : 'text-gray-600 hover:bg-gray-100'
             }`}
           >
@@ -202,7 +202,7 @@ function TableList({ tables, expandedItems, toggleItem }: { tables: TableInfo[];
                   <tbody>
                     {table.columns.map((col, i) => (
                       <tr key={i} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                        <td className="py-1.5 font-mono text-indigo-600">{col.name}</td>
+                        <td className="py-1.5 font-mono text-orange-600">{col.name}</td>
                         <td className="py-1.5 text-gray-600">{col.type}</td>
                         <td className="py-1.5">{col.required ? '○' : ''}</td>
                         <td className="py-1.5">{col.unique ? '○' : ''}</td>
@@ -216,7 +216,7 @@ function TableList({ tables, expandedItems, toggleItem }: { tables: TableInfo[];
                     <div className="space-y-1">
                       {table.relations.map((rel, i) => (
                         <div key={i} className="text-sm text-gray-600">
-                          <span className="font-mono text-indigo-600">{rel.sourceColumn}</span>
+                          <span className="font-mono text-orange-600">{rel.sourceColumn}</span>
                           <span className="mx-2">→</span>
                           <span className="font-mono text-green-600">{rel.targetTable}.{rel.targetColumn}</span>
                           <span className="text-xs text-gray-400 ml-2">({rel.type})</span>
@@ -275,7 +275,7 @@ function PageList({ pages, expandedItems, toggleItem, hideEmpty, onToggleHideEmp
             type="checkbox"
             checked={hideEmpty}
             onChange={onToggleHideEmpty}
-            className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            className="w-4 h-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
           />
           空の画面を非表示
           {emptyCount > 0 && <span className="text-xs text-gray-400">({emptyCount}件)</span>}
@@ -340,7 +340,7 @@ function PageList({ pages, expandedItems, toggleItem, hideEmpty, onToggleHideEmp
                     <div className="space-y-1 max-h-40 overflow-auto">
                       {page.formulas.slice(0, 10).map((f, i) => (
                         <div key={i} className="text-sm">
-                          <span className="font-mono text-indigo-600">{f.cell}</span>
+                          <span className="font-mono text-orange-600">{f.cell}</span>
                           <span className="mx-2">=</span>
                           <span className="font-mono text-gray-600 text-xs">{f.formula}</span>
                         </div>
@@ -498,7 +498,7 @@ function WorkflowList({ workflows, expandedItems, toggleItem }: { workflows: Wor
                   {wf.transitions.map((t, i) => (
                     <div key={i} className="text-sm bg-gray-50 rounded p-2">
                       <div>
-                        <span className="font-mono text-indigo-600">{t.fromState}</span>
+                        <span className="font-mono text-orange-600">{t.fromState}</span>
                         <span className="mx-2">→</span>
                         <span className="font-mono text-green-600">{t.toState}</span>
                         <span className="text-gray-600 ml-2">: {t.action}</span>
