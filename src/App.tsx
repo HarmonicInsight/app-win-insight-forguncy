@@ -32,7 +32,6 @@ function App() {
     reset,
   } = useAnalysis();
 
-  // 設定を読み込む
   useEffect(() => {
     const loadSettings = async () => {
       try {
@@ -53,7 +52,6 @@ function App() {
   const handleStartAnalysis = useCallback(async () => {
     if (!selectedFile) return;
 
-    // 仕様書生成のみ
     const options: AnalysisOptionsState = {
       generateSpec: true,
       codeReview: false,
@@ -76,161 +74,135 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* ヘッダー */}
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-5xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-surface-secondary flex flex-col">
+      {/* Header */}
+      <header className="bg-surface-primary border-b border-border sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* Logo/Icon */}
+            <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">
+              <h1 className="text-base font-semibold text-content-primary leading-tight">
                 {t('app.title')}
               </h1>
-              <p className="text-sm text-gray-500 mt-0.5">{t('app.subtitle')}</p>
+              <p className="text-2xs text-content-muted">{t('app.subtitle')}</p>
             </div>
-            <LanguageSelector />
           </div>
+          <LanguageSelector />
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
-        <div className="bg-white border border-gray-200 overflow-hidden">
-          {/* タブ */}
-          <div className="flex border-b border-gray-200">
-            <button
-              onClick={() => setActiveTab('generate')}
-              className={`flex-1 py-4 px-6 text-sm font-medium transition-colors ${
-                activeTab === 'generate'
-                  ? 'bg-white text-orange-600 border-b-2 border-orange-500'
-                  : 'bg-gray-50 text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              <div className="flex items-center justify-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
+      {/* Main Content */}
+      <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-6">
+        <div className="bg-surface-primary border border-border rounded-xl shadow-card overflow-hidden">
+          {/* Tab Navigation */}
+          <div className="border-b border-border">
+            <nav className="flex px-1" aria-label="Tabs">
+              <TabButton
+                active={activeTab === 'generate'}
+                onClick={() => setActiveTab('generate')}
+                icon={
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                }
+              >
                 仕様書生成
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('view')}
-              disabled={!result?.analysisResult}
-              className={`flex-1 py-4 px-6 text-sm font-medium transition-colors ${
-                activeTab === 'view'
-                  ? 'bg-white text-orange-600 border-b-2 border-orange-500'
-                  : result?.analysisResult
-                  ? 'bg-gray-50 text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                  : 'bg-gray-50 text-gray-300 cursor-not-allowed'
-              }`}
-            >
-              <div className="flex items-center justify-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
-                </svg>
+              </TabButton>
+              <TabButton
+                active={activeTab === 'view'}
+                onClick={() => setActiveTab('view')}
+                disabled={!result?.analysisResult}
+                icon={
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 12h16M4 18h7" />
+                  </svg>
+                }
+              >
                 プロジェクト内容
-              </div>
-            </button>
+              </TabButton>
+            </nav>
           </div>
 
-          <div className="p-8">
+          {/* Tab Content */}
+          <div className="p-6">
             {activeTab === 'generate' ? (
-              <>
-                {/* ファイルドロップゾーン */}
+              <div className="space-y-6 animate-fade-in">
+                {/* File Drop Zone */}
                 <FileDropZone
                   selectedFile={selectedFile}
                   onFileSelect={handleFileSelect}
                   disabled={isAnalyzing}
                 />
 
-                {/* 出力フォルダ設定 */}
-                <div className="mt-8 p-5 bg-gray-50 border border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-900">{t('output.folder')}</h3>
-                      <p className="text-sm text-gray-500 truncate max-w-md mt-1">
-                        {outputFolder || t('output.notSet')}
+                {/* Output Settings Card */}
+                <div className="bg-surface-secondary rounded-lg border border-border-light p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm font-medium text-content-primary">
+                        {t('output.folder')}
+                      </h3>
+                      <p className="text-sm text-content-secondary truncate mt-0.5">
+                        {outputFolder || (
+                          <span className="text-content-muted italic">{t('output.notSet')}</span>
+                        )}
                       </p>
                     </div>
                     <button
                       onClick={handleSelectOutputFolder}
                       disabled={isAnalyzing}
-                      className="px-4 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
+                      className="px-3 py-1.5 text-sm font-medium text-content-secondary bg-surface-primary border border-border rounded-lg hover:bg-surface-secondary hover:border-border-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {t('output.change')}
                     </button>
                   </div>
                 </div>
 
-                {/* 解析開始ボタン */}
-                <div className="mt-8">
-                  <button
-                    onClick={handleStartAnalysis}
-                    disabled={!selectedFile || isAnalyzing}
-                    className={`w-full py-4 text-base font-medium transition-colors ${
-                      !selectedFile || isAnalyzing
-                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                        : 'bg-orange-500 text-white hover:bg-orange-600'
-                    }`}
-                  >
-                    {isAnalyzing ? (
-                      <span className="flex items-center justify-center">
-                        <svg
-                          className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                        >
-                          <circle
-                            className="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                          />
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                          />
-                        </svg>
-                        {t('analysis.analyzing')}
-                      </span>
-                    ) : (
-                      t('analysis.start')
-                    )}
-                  </button>
-                </div>
+                {/* Action Button */}
+                <button
+                  onClick={handleStartAnalysis}
+                  disabled={!selectedFile || isAnalyzing}
+                  className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all duration-150 ${
+                    !selectedFile || isAnalyzing
+                      ? 'bg-border text-content-muted cursor-not-allowed'
+                      : 'bg-accent text-white hover:bg-accent-hover shadow-soft hover:shadow-medium'
+                  }`}
+                >
+                  {isAnalyzing ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      {t('analysis.analyzing')}
+                    </span>
+                  ) : (
+                    t('analysis.start')
+                  )}
+                </button>
 
-                {/* 進捗表示 */}
+                {/* Progress */}
                 {isAnalyzing && (
                   <ProgressBar progress={progress} message={progressMessage} />
                 )}
 
-                {/* エラー表示 */}
+                {/* Error */}
                 {error && (
-                  <div className="mt-6 p-4 bg-red-50 border border-red-200">
-                    <div className="flex items-center">
-                      <svg
-                        className="w-5 h-5 text-red-500 mr-2"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                      <span className="text-red-700">{error}</span>
-                    </div>
+                  <div className="flex items-start gap-3 p-4 bg-error-light border border-error/20 rounded-lg animate-slide-up">
+                    <svg className="w-5 h-5 text-error flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-sm text-error">{error}</p>
                   </div>
                 )}
 
-                {/* 結果表示 */}
+                {/* Results */}
                 {result && result.success && (
-                  <>
+                  <div className="space-y-4 animate-slide-up">
                     <ResultsSummary
                       analysisResult={result.analysisResult!}
                       reviewResult={null}
@@ -239,27 +211,67 @@ function App() {
                       outputDir={result.outputDir!}
                       generatedFiles={result.generatedFiles!}
                     />
-                  </>
+                  </div>
                 )}
-              </>
+              </div>
             ) : (
-              /* ビューワータブ */
               result?.analysisResult && (
-                <ProjectViewer analysisResult={result.analysisResult} />
+                <div className="animate-fade-in">
+                  <ProjectViewer analysisResult={result.analysisResult} />
+                </div>
               )
             )}
           </div>
         </div>
       </main>
 
-      {/* フッター */}
-      <footer className="border-t border-gray-200 bg-white mt-auto">
-        <div className="max-w-5xl mx-auto px-6 py-4 text-center">
-          <p className="text-sm text-gray-500">Forguncy Analyzer v1.0.0</p>
-          <p className="text-xs text-gray-400 mt-1">{t('app.footer')}</p>
+      {/* Footer */}
+      <footer className="border-t border-border bg-surface-primary">
+        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
+          <p className="text-xs text-content-muted">
+            Forguncy Analyzer v1.0.0
+          </p>
+          <p className="text-xs text-content-muted">
+            {t('app.footer')}
+          </p>
         </div>
       </footer>
     </div>
+  );
+}
+
+// Tab Button Component
+function TabButton({
+  active,
+  onClick,
+  disabled,
+  icon,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`relative flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
+        active
+          ? 'text-accent'
+          : disabled
+          ? 'text-content-muted cursor-not-allowed'
+          : 'text-content-secondary hover:text-content-primary'
+      }`}
+    >
+      {icon}
+      {children}
+      {active && (
+        <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent rounded-full" />
+      )}
+    </button>
   );
 }
 

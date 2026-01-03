@@ -41,7 +41,6 @@ export default function FileDropZone({ selectedFile, onFileSelect, disabled }: P
     if (files.length > 0) {
       const file = files[0];
       if (file.name.endsWith('.fgcp')) {
-        // Electronでは file.path でフルパスが取得できる
         const filePath = (file as unknown as { path: string }).path;
         if (filePath) {
           onFileSelect(filePath);
@@ -70,58 +69,62 @@ export default function FileDropZone({ selectedFile, onFileSelect, disabled }: P
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       className={`
-        relative border-2 border-dashed p-12 text-center cursor-pointer
-        transition-all duration-200
-        ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-orange-400 hover:bg-orange-50'}
-        ${isDragging ? 'border-orange-500 bg-orange-50' : 'border-gray-300 bg-gray-50'}
-        ${selectedFile ? 'border-green-500 bg-green-50' : ''}
+        relative rounded-lg border-2 border-dashed p-8 text-center cursor-pointer
+        transition-all duration-150 ease-out
+        ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
+        ${isDragging
+          ? 'border-accent bg-accent-light'
+          : selectedFile
+          ? 'border-success bg-success-light'
+          : 'border-border hover:border-accent/50 hover:bg-surface-secondary'
+        }
       `}
     >
       {selectedFile ? (
         <div className="flex flex-col items-center">
-          <svg
-            className="w-12 h-12 text-green-500 mb-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
-          <p className="text-base font-medium text-gray-900">{t('fileSelect.selected')}</p>
-          <p className="mt-2 text-orange-600 font-mono text-sm break-all px-4">
+          {/* Success Icon */}
+          <div className="w-12 h-12 rounded-full bg-success-muted flex items-center justify-center mb-4">
+            <svg className="w-6 h-6 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <p className="text-sm font-medium text-content-primary">
+            {t('fileSelect.selected')}
+          </p>
+          <p className="mt-2 font-mono text-sm text-accent break-all px-4 max-w-full">
             {fileName}
           </p>
-          <p className="mt-4 text-sm text-gray-500">
+          <p className="mt-4 text-xs text-content-muted">
             {t('fileSelect.changeFile')}
           </p>
         </div>
       ) : (
         <div className="flex flex-col items-center">
-          <svg
-            className={`w-12 h-12 mb-4 ${isDragging ? 'text-orange-500' : 'text-gray-400'}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-            />
-          </svg>
-          <p className="text-base font-medium text-gray-900">
+          {/* Upload Icon */}
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 transition-colors ${
+            isDragging ? 'bg-accent-muted' : 'bg-surface-tertiary'
+          }`}>
+            <svg
+              className={`w-6 h-6 transition-colors ${isDragging ? 'text-accent' : 'text-content-muted'}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+              />
+            </svg>
+          </div>
+          <p className="text-sm font-medium text-content-primary">
             {t('fileSelect.dropzone')}
           </p>
-          <p className="mt-2 text-gray-500">
+          <p className="mt-1 text-sm text-content-secondary">
             {t('fileSelect.orClick')}
           </p>
-          <p className="mt-4 text-sm text-gray-400">
+          <p className="mt-4 text-xs text-content-muted font-mono">
             {t('fileSelect.supportedFormat')}
           </p>
         </div>

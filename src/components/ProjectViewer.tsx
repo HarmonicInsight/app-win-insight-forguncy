@@ -26,16 +26,16 @@ function CopyButton({ text, className = '' }: { text: string; className?: string
   return (
     <button
       onClick={handleCopy}
-      className={`p-1 rounded hover:bg-gray-200 transition-colors ${className}`}
+      className={`p-1.5 rounded-md hover:bg-surface-tertiary transition-colors ${className}`}
       title="コピー"
     >
       {copied ? (
-        <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-4 h-4 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
       ) : (
-        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        <svg className="w-4 h-4 text-content-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
         </svg>
       )}
     </button>
@@ -66,7 +66,7 @@ export default function ProjectViewer({ analysisResult }: Props) {
       count: analysisResult.tables.length,
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
         </svg>
       ),
     },
@@ -76,7 +76,7 @@ export default function ProjectViewer({ analysisResult }: Props) {
       count: hideEmptyPages ? pagesWithContent.length : analysisResult.pages.length,
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
         </svg>
       ),
     },
@@ -86,7 +86,7 @@ export default function ProjectViewer({ analysisResult }: Props) {
       count: analysisResult.serverCommands.length,
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
       ),
     },
@@ -96,36 +96,42 @@ export default function ProjectViewer({ analysisResult }: Props) {
       count: analysisResult.workflows.length,
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
       ),
     },
   ];
 
   return (
-    <div className="flex h-[600px] border border-gray-200 overflow-hidden select-text">
-      {/* サイドバー */}
-      <div className="w-48 bg-gray-50 border-r border-gray-200 flex-shrink-0">
-        {sections.map((section) => (
-          <button
-            key={section.key}
-            onClick={() => setActiveSection(section.key)}
-            className={`w-full px-4 py-3 text-left text-sm flex items-center gap-2 transition-colors ${
-              activeSection === section.key
-                ? 'bg-orange-50 text-orange-600 border-r-2 border-orange-500'
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            {section.icon}
-            <span className="flex-1">{section.label}</span>
-            <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
-              {section.count}
-            </span>
-          </button>
-        ))}
+    <div className="flex h-[560px] border border-border rounded-lg overflow-hidden select-text bg-surface-primary">
+      {/* Sidebar */}
+      <div className="w-52 bg-surface-secondary border-r border-border flex-shrink-0">
+        <div className="p-2">
+          {sections.map((section) => (
+            <button
+              key={section.key}
+              onClick={() => setActiveSection(section.key)}
+              className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2.5 rounded-md transition-colors ${
+                activeSection === section.key
+                  ? 'bg-accent-light text-accent font-medium'
+                  : 'text-content-secondary hover:bg-surface-tertiary hover:text-content-primary'
+              }`}
+            >
+              {section.icon}
+              <span className="flex-1">{section.label}</span>
+              <span className={`text-xs px-1.5 py-0.5 rounded ${
+                activeSection === section.key
+                  ? 'bg-accent/10 text-accent'
+                  : 'bg-surface-tertiary text-content-muted'
+              }`}>
+                {section.count}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* メインコンテンツ */}
+      {/* Main Content */}
       <div className="flex-1 overflow-auto p-4">
         {activeSection === 'tables' && (
           <TableList tables={analysisResult.tables} expandedItems={expandedItems} toggleItem={toggleItem} />
@@ -150,6 +156,77 @@ export default function ProjectViewer({ analysisResult }: Props) {
   );
 }
 
+// Expandable Item Component
+function ExpandableItem({
+  id: _id,
+  title,
+  subtitle,
+  badge,
+  isExpanded,
+  onToggle,
+  onCopy,
+  muted,
+  children,
+}: {
+  id: string;
+  title: string;
+  subtitle?: string;
+  badge?: React.ReactNode;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onCopy?: string;
+  muted?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`border rounded-lg overflow-hidden transition-colors ${
+      muted ? 'border-border-light' : 'border-border'
+    }`}>
+      <div className={`flex items-center transition-colors ${
+        muted ? 'bg-surface-secondary/50' : 'bg-surface-secondary hover:bg-surface-tertiary'
+      }`}>
+        <button
+          onClick={onToggle}
+          className="flex-1 px-4 py-3 flex items-center gap-3 text-left"
+        >
+          <svg
+            className={`w-4 h-4 text-content-muted transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          <span className={`text-sm font-medium ${muted ? 'text-content-muted' : 'text-content-primary'}`}>
+            {title}
+          </span>
+          {badge}
+          {subtitle && (
+            <span className={`text-xs ml-auto ${muted ? 'text-content-muted/60' : 'text-content-muted'}`}>
+              {subtitle}
+            </span>
+          )}
+        </button>
+        {onCopy && !muted && <CopyButton text={onCopy} className="mr-2" />}
+      </div>
+      {isExpanded && (
+        <div className="border-t border-border-light bg-surface-primary p-4">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Section Header
+function SectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <h4 className="text-xs font-medium text-content-muted uppercase tracking-wider mb-2">
+      {children}
+    </h4>
+  );
+}
+
 // テーブル一覧
 function TableList({ tables, expandedItems, toggleItem }: { tables: TableInfo[]; expandedItems: Set<string>; toggleItem: (id: string) => void }) {
   const formatTableAsText = (table: TableInfo) => {
@@ -167,70 +244,70 @@ function TableList({ tables, expandedItems, toggleItem }: { tables: TableInfo[];
     return text;
   };
 
+  if (tables.length === 0) {
+    return <EmptyState message="テーブルがありません" />;
+  }
+
   return (
     <div className="space-y-2">
       {tables.map((table, index) => {
         const id = `table-${index}`;
         const isExpanded = expandedItems.has(id);
         return (
-          <div key={id} className="border border-gray-200 rounded-lg overflow-hidden">
-            <div className="flex items-center bg-gray-50 hover:bg-gray-100 transition-colors">
-              <button
-                onClick={() => toggleItem(id)}
-                className="flex-1 px-4 py-3 flex items-center gap-2 text-left"
-              >
-                <svg className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-                <span className="font-medium text-gray-800">{table.name}</span>
-                <span className="text-xs text-gray-500 ml-auto">{table.columns.length}列</span>
-              </button>
-              <CopyButton text={formatTableAsText(table)} className="mr-2" />
-            </div>
-            {isExpanded && (
-              <div className="p-4 border-t border-gray-200 bg-white">
-                <h4 className="text-xs font-medium text-gray-500 mb-2">カラム</h4>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-gray-500 border-b">
-                      <th className="pb-2">名前</th>
-                      <th className="pb-2">型</th>
-                      <th className="pb-2">必須</th>
-                      <th className="pb-2">ユニーク</th>
+          <ExpandableItem
+            key={id}
+            id={id}
+            title={table.name}
+            subtitle={`${table.columns.length}列`}
+            isExpanded={isExpanded}
+            onToggle={() => toggleItem(id)}
+            onCopy={formatTableAsText(table)}
+          >
+            <SectionHeader>カラム</SectionHeader>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-content-muted border-b border-border-light">
+                    <th className="pb-2 font-medium">名前</th>
+                    <th className="pb-2 font-medium">型</th>
+                    <th className="pb-2 font-medium w-16">必須</th>
+                    <th className="pb-2 font-medium w-20">ユニーク</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {table.columns.map((col, i) => (
+                    <tr key={i} className="border-b border-border-light last:border-0">
+                      <td className="py-2 font-mono text-accent text-sm">{col.name}</td>
+                      <td className="py-2 text-content-secondary">{col.type}</td>
+                      <td className="py-2">{col.required && <span className="text-warning">●</span>}</td>
+                      <td className="py-2">{col.unique && <span className="text-accent">●</span>}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {table.columns.map((col, i) => (
-                      <tr key={i} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                        <td className="py-1.5 font-mono text-orange-600">{col.name}</td>
-                        <td className="py-1.5 text-gray-600">{col.type}</td>
-                        <td className="py-1.5">{col.required ? '○' : ''}</td>
-                        <td className="py-1.5">{col.unique ? '○' : ''}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {table.relations.length > 0 && (
-                  <>
-                    <h4 className="text-xs font-medium text-gray-500 mt-4 mb-2">リレーション</h4>
-                    <div className="space-y-1">
-                      {table.relations.map((rel, i) => (
-                        <div key={i} className="text-sm text-gray-600">
-                          <span className="font-mono text-orange-600">{rel.sourceColumn}</span>
-                          <span className="mx-2">→</span>
-                          <span className="font-mono text-green-600">{rel.targetTable}.{rel.targetColumn}</span>
-                          <span className="text-xs text-gray-400 ml-2">({rel.type})</span>
-                        </div>
-                      ))}
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {table.relations.length > 0 && (
+              <div className="mt-4">
+                <SectionHeader>リレーション</SectionHeader>
+                <div className="space-y-1.5">
+                  {table.relations.map((rel, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
+                      <span className="font-mono text-accent">{rel.sourceColumn}</span>
+                      <svg className="w-4 h-4 text-content-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                      </svg>
+                      <span className="font-mono text-success">{rel.targetTable}.{rel.targetColumn}</span>
+                      <span className="text-2xs text-content-muted bg-surface-secondary px-1.5 py-0.5 rounded">
+                        {rel.type}
+                      </span>
                     </div>
-                  </>
-                )}
+                  ))}
+                </div>
               </div>
             )}
-          </div>
+          </ExpandableItem>
         );
       })}
-      {tables.length === 0 && <p className="text-gray-300 text-center py-8">テーブルがありません</p>}
     </div>
   );
 }
@@ -267,99 +344,103 @@ function PageList({ pages, expandedItems, toggleItem, hideEmpty, onToggleHideEmp
   };
 
   return (
-    <div className="space-y-2">
-      {/* フィルタトグル */}
-      <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-100">
-        <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600">
+    <div className="space-y-3">
+      {/* Filter */}
+      <div className="flex items-center gap-2 pb-3 border-b border-border-light">
+        <label className="flex items-center gap-2 cursor-pointer text-sm text-content-secondary">
           <input
             type="checkbox"
             checked={hideEmpty}
             onChange={onToggleHideEmpty}
-            className="w-4 h-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+            className="w-4 h-4 rounded border-border text-accent focus:ring-accent focus:ring-offset-0"
           />
           空の画面を非表示
-          {emptyCount > 0 && <span className="text-xs text-gray-400">({emptyCount}件)</span>}
         </label>
+        {emptyCount > 0 && (
+          <span className="text-xs text-content-muted">({emptyCount}件)</span>
+        )}
       </div>
 
-      {filteredPages.map((page, index) => {
-        const id = `page-${index}`;
-        const isExpanded = expandedItems.has(id);
-        const hasContent = page.buttons.length > 0 || page.formulas.length > 0;
-        return (
-          <div key={id} className={`border rounded-lg overflow-hidden ${hasContent ? 'border-gray-200' : 'border-gray-100'}`}>
-            <div className={`flex items-center transition-colors ${hasContent ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-50/50 hover:bg-gray-100/50'}`}>
-              <button
-                onClick={() => toggleItem(id)}
-                className="flex-1 px-4 py-3 flex items-center gap-2 text-left"
+      {filteredPages.length === 0 ? (
+        <EmptyState message="画面がありません" />
+      ) : (
+        <div className="space-y-2">
+          {filteredPages.map((page, index) => {
+            const id = `page-${index}`;
+            const isExpanded = expandedItems.has(id);
+            const hasContent = page.buttons.length > 0 || page.formulas.length > 0;
+
+            const subtitle = hasContent
+              ? [
+                  page.buttons.length > 0 && `${page.buttons.length}ボタン`,
+                  page.formulas.length > 0 && `${page.formulas.length}数式`,
+                ].filter(Boolean).join(' ')
+              : 'コンテンツなし';
+
+            return (
+              <ExpandableItem
+                key={id}
+                id={id}
+                title={page.name}
+                subtitle={subtitle}
+                badge={page.type === 'masterPage' ? (
+                  <span className="text-2xs bg-accent-light text-accent px-1.5 py-0.5 rounded font-medium">
+                    マスター
+                  </span>
+                ) : undefined}
+                isExpanded={isExpanded}
+                onToggle={() => toggleItem(id)}
+                onCopy={hasContent ? formatPageAsText(page) : undefined}
+                muted={!hasContent}
               >
-                <svg className={`w-4 h-4 transition-transform ${hasContent ? 'text-gray-400' : 'text-gray-200'} ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-                <span className={`font-medium ${hasContent ? 'text-gray-800' : 'text-gray-400'}`}>{page.name}</span>
-                {page.type === 'masterPage' && (
-                  <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">マスター</span>
-                )}
-                <span className={`text-xs ml-auto ${hasContent ? 'text-gray-500' : 'text-gray-300'}`}>
-                  {hasContent ? (
-                    <>
-                      {page.buttons.length > 0 && `${page.buttons.length}ボタン`}
-                      {page.formulas.length > 0 && ` ${page.formulas.length}数式`}
-                    </>
-                  ) : (
-                    'コンテンツなし'
-                  )}
-                </span>
-              </button>
-              {hasContent && <CopyButton text={formatPageAsText(page)} className="mr-2" />}
-            </div>
-            {isExpanded && (
-              <div className="p-4 border-t border-gray-200 bg-white">
                 {page.buttons.length > 0 && (
-                  <>
-                    <h4 className="text-xs font-medium text-gray-500 mb-2">ボタン</h4>
-                    <div className="space-y-2 mb-4">
+                  <div className="mb-4">
+                    <SectionHeader>ボタン</SectionHeader>
+                    <div className="space-y-2">
                       {page.buttons.map((btn, i) => (
-                        <div key={i} className="bg-gray-50 rounded p-2">
-                          <div className="font-medium text-sm text-gray-800">{btn.name}</div>
+                        <div key={i} className="bg-surface-secondary rounded-md p-3">
+                          <div className="text-sm font-medium text-content-primary">{btn.name}</div>
                           {btn.commands.length > 0 && (
-                            <div className="mt-1 text-xs text-gray-500">
+                            <div className="mt-1.5 space-y-0.5">
                               {btn.commands.map((cmd, j) => (
-                                <div key={j}>• {cmd.description}</div>
+                                <div key={j} className="text-xs text-content-secondary">
+                                  • {cmd.description}
+                                </div>
                               ))}
                             </div>
                           )}
                         </div>
                       ))}
                     </div>
-                  </>
+                  </div>
                 )}
                 {page.formulas.length > 0 && (
-                  <>
-                    <h4 className="text-xs font-medium text-gray-500 mb-2">数式</h4>
+                  <div>
+                    <SectionHeader>数式</SectionHeader>
                     <div className="space-y-1 max-h-40 overflow-auto">
                       {page.formulas.slice(0, 10).map((f, i) => (
-                        <div key={i} className="text-sm">
-                          <span className="font-mono text-orange-600">{f.cell}</span>
-                          <span className="mx-2">=</span>
-                          <span className="font-mono text-gray-600 text-xs">{f.formula}</span>
+                        <div key={i} className="flex items-center gap-2 text-sm">
+                          <span className="font-mono text-accent">{f.cell}</span>
+                          <span className="text-content-muted">=</span>
+                          <span className="font-mono text-xs text-content-secondary truncate">{f.formula}</span>
                         </div>
                       ))}
                       {page.formulas.length > 10 && (
-                        <div className="text-xs text-gray-400">他{page.formulas.length - 10}件...</div>
+                        <div className="text-xs text-content-muted pt-1">
+                          他{page.formulas.length - 10}件...
+                        </div>
                       )}
                     </div>
-                  </>
+                  </div>
                 )}
                 {!hasContent && (
-                  <p className="text-sm text-gray-300 italic">コンテンツなし</p>
+                  <p className="text-sm text-content-muted italic">コンテンツなし</p>
                 )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-      {filteredPages.length === 0 && <p className="text-gray-300 text-center py-8">画面がありません</p>}
+              </ExpandableItem>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -381,55 +462,51 @@ function ServerCommandList({ commands, expandedItems, toggleItem }: { commands: 
     return text;
   };
 
+  if (commands.length === 0) {
+    return <EmptyState message="サーバーコマンドがありません" />;
+  }
+
   return (
     <div className="space-y-2">
       {commands.map((cmd, index) => {
         const id = `cmd-${index}`;
         const isExpanded = expandedItems.has(id);
         return (
-          <div key={id} className="border border-gray-200 rounded-lg overflow-hidden">
-            <div className="flex items-center bg-gray-50 hover:bg-gray-100 transition-colors">
-              <button
-                onClick={() => toggleItem(id)}
-                className="flex-1 px-4 py-3 flex items-center gap-2 text-left"
-              >
-                <svg className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-                <span className="font-medium text-gray-800">{cmd.name}</span>
-                <span className="text-xs text-gray-500 ml-auto">{cmd.commands.length}行</span>
-              </button>
-              <CopyButton text={formatCommandAsText(cmd)} className="mr-2" />
-            </div>
-            {isExpanded && (
-              <div className="p-4 border-t border-gray-200 bg-white">
-                {cmd.parameters && cmd.parameters.length > 0 && (
-                  <>
-                    <h4 className="text-xs font-medium text-gray-500 mb-2">パラメータ</h4>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {cmd.parameters.map((p, i) => (
-                        <span key={i} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
-                          {p.name}: {p.type}
-                          {p.required && <span className="text-red-500">*</span>}
-                        </span>
-                      ))}
-                    </div>
-                  </>
-                )}
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-xs font-medium text-gray-500">処理内容</h4>
-                  <CopyButton text={cmd.commands.join('\n')} />
+          <ExpandableItem
+            key={id}
+            id={id}
+            title={cmd.name}
+            subtitle={`${cmd.commands.length}行`}
+            isExpanded={isExpanded}
+            onToggle={() => toggleItem(id)}
+            onCopy={formatCommandAsText(cmd)}
+          >
+            {cmd.parameters && cmd.parameters.length > 0 && (
+              <div className="mb-4">
+                <SectionHeader>パラメータ</SectionHeader>
+                <div className="flex flex-wrap gap-2">
+                  {cmd.parameters.map((p, i) => (
+                    <span key={i} className="text-xs bg-accent-light text-accent px-2 py-1 rounded font-mono">
+                      {p.name}: {p.type}
+                      {p.required && <span className="text-error ml-0.5">*</span>}
+                    </span>
+                  ))}
                 </div>
-                <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-auto max-h-60 font-mono">
-                  {cmd.commands.slice(0, 30).join('\n')}
-                  {cmd.commands.length > 30 && `\n\n... 他${cmd.commands.length - 30}行`}
-                </pre>
               </div>
             )}
-          </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <SectionHeader>処理内容</SectionHeader>
+                <CopyButton text={cmd.commands.join('\n')} />
+              </div>
+              <pre className="bg-content-primary text-content-inverse p-3 rounded-lg text-xs overflow-auto max-h-60 font-mono leading-relaxed">
+                {cmd.commands.slice(0, 30).join('\n')}
+                {cmd.commands.length > 30 && `\n\n... 他${cmd.commands.length - 30}行`}
+              </pre>
+            </div>
+          </ExpandableItem>
         );
       })}
-      {commands.length === 0 && <p className="text-gray-300 text-center py-8">サーバーコマンドがありません</p>}
     </div>
   );
 }
@@ -452,71 +529,85 @@ function WorkflowList({ workflows, expandedItems, toggleItem }: { workflows: Wor
     return text;
   };
 
+  if (workflows.length === 0) {
+    return <EmptyState message="ワークフローがありません" />;
+  }
+
   return (
     <div className="space-y-2">
       {workflows.map((wf, index) => {
         const id = `wf-${index}`;
         const isExpanded = expandedItems.has(id);
         return (
-          <div key={id} className="border border-gray-200 rounded-lg overflow-hidden">
-            <div className="flex items-center bg-gray-50 hover:bg-gray-100 transition-colors">
-              <button
-                onClick={() => toggleItem(id)}
-                className="flex-1 px-4 py-3 flex items-center gap-2 text-left"
-              >
-                <svg className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-                <span className="font-medium text-gray-800">{wf.tableName}</span>
-                <span className="text-xs text-gray-500 ml-auto">{wf.states.length}状態 {wf.transitions.length}遷移</span>
-              </button>
-              <CopyButton text={formatWorkflowAsText(wf)} className="mr-2" />
-            </div>
-            {isExpanded && (
-              <div className="p-4 border-t border-gray-200 bg-white">
-                <h4 className="text-xs font-medium text-gray-500 mb-2">状態</h4>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {wf.states.map((state, i) => (
-                    <span
-                      key={i}
-                      className={`text-xs px-2 py-1 rounded ${
-                        state.isInitial
-                          ? 'bg-green-100 text-green-700'
-                          : state.isFinal
-                          ? 'bg-red-100 text-red-700'
-                          : 'bg-gray-100 text-gray-700'
-                      }`}
-                    >
-                      {state.name}
-                      {state.isInitial && ' (開始)'}
-                      {state.isFinal && ' (終了)'}
-                    </span>
-                  ))}
-                </div>
-                <h4 className="text-xs font-medium text-gray-500 mb-2">遷移</h4>
-                <div className="space-y-2">
-                  {wf.transitions.map((t, i) => (
-                    <div key={i} className="text-sm bg-gray-50 rounded p-2">
-                      <div>
-                        <span className="font-mono text-orange-600">{t.fromState}</span>
-                        <span className="mx-2">→</span>
-                        <span className="font-mono text-green-600">{t.toState}</span>
-                        <span className="text-gray-600 ml-2">: {t.action}</span>
-                      </div>
-                      {t.assignees.length > 0 && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          担当: {t.assignees.map(a => `${a.type}:${a.value}`).join(', ')}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+          <ExpandableItem
+            key={id}
+            id={id}
+            title={wf.tableName}
+            subtitle={`${wf.states.length}状態 ${wf.transitions.length}遷移`}
+            isExpanded={isExpanded}
+            onToggle={() => toggleItem(id)}
+            onCopy={formatWorkflowAsText(wf)}
+          >
+            <div className="mb-4">
+              <SectionHeader>状態</SectionHeader>
+              <div className="flex flex-wrap gap-2">
+                {wf.states.map((state, i) => (
+                  <span
+                    key={i}
+                    className={`text-xs px-2 py-1 rounded font-medium ${
+                      state.isInitial
+                        ? 'bg-success-light text-success'
+                        : state.isFinal
+                        ? 'bg-error-light text-error'
+                        : 'bg-surface-tertiary text-content-secondary'
+                    }`}
+                  >
+                    {state.name}
+                    {state.isInitial && ' (開始)'}
+                    {state.isFinal && ' (終了)'}
+                  </span>
+                ))}
               </div>
-            )}
-          </div>
+            </div>
+            <div>
+              <SectionHeader>遷移</SectionHeader>
+              <div className="space-y-2">
+                {wf.transitions.map((t, i) => (
+                  <div key={i} className="bg-surface-secondary rounded-md p-3">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="font-mono text-accent">{t.fromState}</span>
+                      <svg className="w-4 h-4 text-content-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                      </svg>
+                      <span className="font-mono text-success">{t.toState}</span>
+                      <span className="text-content-secondary ml-1">: {t.action}</span>
+                    </div>
+                    {t.assignees.length > 0 && (
+                      <div className="text-xs text-content-muted mt-1.5">
+                        担当: {t.assignees.map(a => `${a.type}:${a.value}`).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </ExpandableItem>
         );
       })}
-      {workflows.length === 0 && <p className="text-gray-300 text-center py-8">ワークフローがありません</p>}
+    </div>
+  );
+}
+
+// Empty State
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="w-12 h-12 rounded-full bg-surface-tertiary flex items-center justify-center mb-3">
+        <svg className="w-6 h-6 text-content-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+        </svg>
+      </div>
+      <p className="text-sm text-content-muted">{message}</p>
     </div>
   );
 }
