@@ -20,7 +20,8 @@
   "dependencies": {
     "adm-zip": "^0.5.10",
     "docx": "^8.5.0",
-    "electron-store": "^8.1.0"
+    "electron-store": "^8.1.0",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.5",
@@ -54,7 +55,9 @@
       "target": [
         {
           "target": "dir",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "signAndEditExecutable": false
@@ -62,7 +65,9 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerLanguages": ["ja"],
+      "installerLanguages": [
+        "ja"
+      ],
       "language": "1041"
     }
   }

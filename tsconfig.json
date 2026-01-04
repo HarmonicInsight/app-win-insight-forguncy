@@ -17,9 +17,11 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@insight/license": ["./insight-common/license/typescript/index.ts"]
     }
   },
   "include": ["src"],
+  "exclude": ["node_modules", "insight-common"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

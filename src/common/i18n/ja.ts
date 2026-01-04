@@ -40,6 +40,7 @@ export const ja = {
   tabs: {
     generate: '仕様書生成',
     projectContent: 'プロジェクト内容',
+    settings: '設定',
   },
 
   // ファイル選択

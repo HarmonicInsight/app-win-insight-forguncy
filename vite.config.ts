@@ -12,6 +12,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@insight/license': path.resolve(__dirname, './insight-common/license/typescript/index.ts'),
     },
   },
   server: {

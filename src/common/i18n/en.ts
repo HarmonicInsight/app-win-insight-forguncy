@@ -40,6 +40,7 @@ export const en = {
   tabs: {
     generate: 'Generate Spec',
     projectContent: 'Project Content',
+    settings: 'Settings',
   },
 
   // File selection
