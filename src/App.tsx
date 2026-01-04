@@ -111,7 +111,7 @@ function App() {
                   </svg>
                 }
               >
-                仕様書生成
+                {t('tabs.generate')}
               </TabButton>
               <TabButton
                 active={activeTab === 'view'}
@@ -123,7 +123,7 @@ function App() {
                   </svg>
                 }
               >
-                プロジェクト内容
+                {t('tabs.projectContent')}
               </TabButton>
             </nav>
           </div>

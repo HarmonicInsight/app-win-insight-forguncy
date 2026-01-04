@@ -36,6 +36,12 @@ export const ja = {
     footer: 'Powered by HarmonicInsight',
   },
 
+  // タブ
+  tabs: {
+    generate: '仕様書生成',
+    projectContent: 'プロジェクト内容',
+  },
+
   // ファイル選択
   fileSelect: {
     dropzone: 'プロジェクトファイルをドロップ',

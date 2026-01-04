@@ -36,6 +36,12 @@ export const en = {
     footer: 'Powered by HarmonicInsight',
   },
 
+  // Tabs
+  tabs: {
+    generate: 'Generate Spec',
+    projectContent: 'Project Content',
+  },
+
   // File selection
   fileSelect: {
     dropzone: 'Drop project file here',
