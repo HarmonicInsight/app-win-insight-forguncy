@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
 import * as path from 'path';
 import { analyzeProject } from './ipc/analyzer';
 import { reviewProject } from './ipc/reviewer';
@@ -43,6 +43,9 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // メニューバーを非表示（シンプルなUIのため）
+  Menu.setApplicationMenu(null);
+
   createWindow();
 
   app.on('activate', () => {
