@@ -2,18 +2,21 @@
 # -*- coding: utf-8 -*-
 """
 Forguncy Insight - Forguncyプロジェクト解析・仕様書自動生成ツール
-Python版 - シンプルな単一ファイル実装
+Python版 - 完全版（ライセンス管理・Excel出力・差分比較対応）
 """
 
+import hashlib
 import json
 import os
 import re
 import zipfile
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from tkinter import Tk, Frame, Label, Button, Entry, StringVar, filedialog, messagebox, ttk
-from typing import Any, Optional
+from tkinter import Tk, Frame, Label, Button, Entry, StringVar, filedialog, messagebox, ttk, Toplevel, Text, Scrollbar
+from tkinter import LEFT, RIGHT, BOTH, END, X, Y, W, E, N, S, VERTICAL, HORIZONTAL, WORD
+from typing import Any, Optional, Dict, List, Tuple
+import webbrowser
 
 # python-docx
 from docx import Document
@@ -22,6 +25,202 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml.ns import qn
+
+# openpyxl for Excel
+try:
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+    from openpyxl.utils import get_column_letter
+    EXCEL_AVAILABLE = True
+except ImportError:
+    EXCEL_AVAILABLE = False
+
+
+# =============================================================================
+# ライセンス管理
+# =============================================================================
+
+LICENSE_KEY_PATTERN = re.compile(
+    r'^INS-(SALES|SLIDE|PY|INTV|FORG|ALL)-(TRIAL|STD|PRO|ENT)-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{2})$'
+)
+
+PRODUCT_CODE = 'FORG'  # Forguncy Insight
+
+# 機能制限
+FEATURE_LIMITS = {
+    'FREE': {
+        'max_tables': 5,
+        'max_pages': 10,
+        'max_server_commands': 3,
+        'max_workflows': 1,
+        'word_export': False,
+        'excel_export': False,
+        'diff_compare': False,
+        'commercial_use': False,
+    },
+    'STD': {
+        'max_tables': float('inf'),
+        'max_pages': float('inf'),
+        'max_server_commands': float('inf'),
+        'max_workflows': float('inf'),
+        'word_export': True,
+        'excel_export': True,
+        'diff_compare': True,
+        'commercial_use': True,
+    },
+}
+
+TIER_NAMES = {
+    'TRIAL': 'トライアル',
+    'STD': 'Standard',
+    'PRO': 'Professional',
+    'ENT': 'Enterprise',
+}
+
+
+def calculate_checksum(base_key: str) -> str:
+    """チェックサムを計算"""
+    total = sum(ord(c) * (i + 1) for i, c in enumerate(base_key))
+    checksum = total % 1296
+    chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    return chars[checksum // 36] + chars[checksum % 36]
+
+
+def validate_license_key(license_key: str, stored_expires_at: Optional[datetime] = None) -> Dict:
+    """ライセンスキーを検証"""
+    if not license_key:
+        return {'is_valid': False, 'error': 'ライセンスキーが必要です', 'tier': None}
+
+    normalized = license_key.strip().upper()
+    match = LICENSE_KEY_PATTERN.match(normalized)
+
+    if not match:
+        return {'is_valid': False, 'error': '無効なライセンスキー形式です', 'tier': None}
+
+    product, tier, part1, part2, provided_checksum = match.groups()
+
+    # チェックサム検証
+    base_key = f'INS-{product}-{tier}-{part1}-{part2}'
+    expected_checksum = calculate_checksum(base_key)
+
+    if provided_checksum != expected_checksum:
+        return {'is_valid': False, 'error': 'チェックサムが無効です', 'tier': None}
+
+    # 製品コードチェック
+    if product != PRODUCT_CODE and product != 'ALL':
+        return {'is_valid': False, 'error': 'この製品用のライセンスではありません', 'tier': None}
+
+    # 期限チェック
+    expires_at = stored_expires_at
+    if tier != 'ENT' and expires_at:
+        if expires_at < datetime.now():
+            return {
+                'is_valid': False,
+                'error': 'ライセンスの有効期限が切れています',
+                'tier': tier,
+                'expires_at': expires_at
+            }
+
+    return {
+        'is_valid': True,
+        'tier': tier,
+        'product': product,
+        'expires_at': expires_at,
+        'error': None
+    }
+
+
+def get_feature_limits(tier: Optional[str]) -> Dict:
+    """ティアに応じた機能制限を取得"""
+    if tier in ['STD', 'PRO', 'ENT']:
+        return FEATURE_LIMITS['STD']
+    return FEATURE_LIMITS['FREE']
+
+
+class LicenseManager:
+    """ライセンス管理クラス"""
+    CONFIG_FILE = Path.home() / '.forguncy_insight_license.json'
+
+    def __init__(self):
+        self.license_key = None
+        self.expires_at = None
+        self.license_info = None
+        self.limits = get_feature_limits(None)
+        self.load()
+
+    def load(self):
+        """保存されたライセンス情報を読み込み"""
+        if self.CONFIG_FILE.exists():
+            try:
+                with open(self.CONFIG_FILE, 'r') as f:
+                    data = json.load(f)
+                    self.license_key = data.get('license_key')
+                    expires_str = data.get('expires_at')
+                    if expires_str:
+                        self.expires_at = datetime.fromisoformat(expires_str)
+                    self.validate()
+            except Exception:
+                pass
+
+    def save(self):
+        """ライセンス情報を保存"""
+        data = {
+            'license_key': self.license_key,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None
+        }
+        with open(self.CONFIG_FILE, 'w') as f:
+            json.dump(data, f)
+
+    def activate(self, license_key: str, expires_at: Optional[datetime] = None) -> Dict:
+        """ライセンスをアクティベート"""
+        # 新規アクティベーション時のデフォルト期限（1年）
+        if not expires_at:
+            expires_at = datetime.now() + timedelta(days=365)
+
+        info = validate_license_key(license_key, expires_at)
+
+        if info['is_valid']:
+            self.license_key = license_key
+            self.expires_at = expires_at
+            self.license_info = info
+            self.limits = get_feature_limits(info['tier'])
+            self.save()
+
+        return info
+
+    def validate(self) -> Dict:
+        """現在のライセンスを検証"""
+        if not self.license_key:
+            self.license_info = {'is_valid': False, 'tier': None}
+            self.limits = get_feature_limits(None)
+            return self.license_info
+
+        self.license_info = validate_license_key(self.license_key, self.expires_at)
+        self.limits = get_feature_limits(self.license_info.get('tier'))
+        return self.license_info
+
+    def clear(self):
+        """ライセンスをクリア"""
+        self.license_key = None
+        self.expires_at = None
+        self.license_info = None
+        self.limits = get_feature_limits(None)
+        if self.CONFIG_FILE.exists():
+            self.CONFIG_FILE.unlink()
+
+    @property
+    def is_activated(self) -> bool:
+        return self.license_info and self.license_info.get('is_valid', False)
+
+    @property
+    def tier(self) -> Optional[str]:
+        return self.license_info.get('tier') if self.license_info else None
+
+    @property
+    def tier_name(self) -> str:
+        if self.tier:
+            return TIER_NAMES.get(self.tier, self.tier)
+        return 'Free'
 
 
 # =============================================================================
@@ -63,7 +262,7 @@ class StateInfo:
 
 @dataclass
 class AssigneeInfo:
-    type: str  # user, role, field, creator, previousAssignee
+    type: str
     value: str
 
 
@@ -125,7 +324,7 @@ class CellCommandInfo:
 @dataclass
 class PageInfo:
     name: str
-    page_type: str  # page or masterPage
+    page_type: str
     path: str
     buttons: list = field(default_factory=list)
     formulas: list = field(default_factory=list)
@@ -145,8 +344,8 @@ class ServerCommandInfo:
     name: str
     folder: str = ""
     path: str = ""
-    commands: list = field(default_factory=list)  # テキスト形式
-    raw_commands: list = field(default_factory=list)  # CommandInfo形式
+    commands: list = field(default_factory=list)
+    raw_commands: list = field(default_factory=list)
     parameters: list = field(default_factory=list)
 
 
@@ -176,34 +375,26 @@ class AnalysisResult:
 
 def extract_json(content: str) -> dict:
     """Forguncy特殊形式のJSONを抽出"""
-    # BOM除去
     cleaned = content.lstrip('\ufeff')
-
-    # 最初の { を探す
     start = cleaned.find('{')
     if start == -1:
         raise ValueError("No JSON object found")
 
-    # バランスの取れた {} を探す
     brace_count = 0
     in_string = False
     escape = False
 
     for i in range(start, len(cleaned)):
         char = cleaned[i]
-
         if escape:
             escape = False
             continue
-
         if char == '\\' and in_string:
             escape = True
             continue
-
         if char == '"':
             in_string = not in_string
             continue
-
         if not in_string:
             if char == '{':
                 brace_count += 1
@@ -216,7 +407,6 @@ def extract_json(content: str) -> dict:
 
 
 def extract_column_type(column_type: Optional[str]) -> str:
-    """カラム型を抽出"""
     if not column_type:
         return "Text"
     parts = column_type.split(',')[0].split('.')
@@ -224,7 +414,6 @@ def extract_column_type(column_type: Optional[str]) -> str:
 
 
 def extract_command_type_name(type_string: str) -> str:
-    """コマンド型名を抽出"""
     if not type_string:
         return "Unknown"
     parts = type_string.split(',')[0].split('.')
@@ -232,33 +421,23 @@ def extract_command_type_name(type_string: str) -> str:
 
 
 def format_condition(condition: Optional[dict]) -> str:
-    """条件をフォーマット"""
     if not condition:
         return "(条件なし)"
-
     if condition.get('Expression'):
         return str(condition['Expression'])
-
     left = condition.get('LeftOperand', '')
     op = condition.get('Operator', '==')
     right = condition.get('RightOperand', '')
-
     return f"{left} {op} {right}"
 
 
 def parse_conditions(condition: Optional[dict]) -> list:
-    """条件を解析"""
     if not condition:
         return []
-
     conditions = []
     cond_type = condition.get('$type', '')
-
     if 'ExpressionCondition' in cond_type:
-        conditions.append(ConditionInfo(
-            type='expression',
-            expression=condition.get('Expression')
-        ))
+        conditions.append(ConditionInfo(type='expression', expression=condition.get('Expression')))
     elif 'CompareCondition' in cond_type:
         conditions.append(ConditionInfo(
             type='compare',
@@ -266,16 +445,13 @@ def parse_conditions(condition: Optional[dict]) -> list:
             operator=condition.get('Operator', '=='),
             value=str(condition.get('RightOperand', ''))
         ))
-
     return conditions
 
 
 def parse_assignees(assignees: list) -> list:
-    """担当者を解析"""
     result = []
     for a in assignees:
         a_type = a.get('$type', '')
-
         if 'UserAssignee' in a_type:
             result.append(AssigneeInfo(type='user', value=a.get('UserName', '')))
         elif 'RoleAssignee' in a_type:
@@ -288,12 +464,10 @@ def parse_assignees(assignees: list) -> list:
             result.append(AssigneeInfo(type='previousAssignee', value='前の担当者'))
         else:
             result.append(AssigneeInfo(type='user', value='不明'))
-
     return result
 
 
 def generate_command_description(cmd: dict, type_name: str) -> str:
-    """コマンドの説明を生成"""
     descriptions = {
         'ExecuteSqlCommand': 'SQL実行',
         'UpdateTableDataCommand': f"テーブル更新: {cmd.get('TableName', '')}",
@@ -310,36 +484,23 @@ def generate_command_description(cmd: dict, type_name: str) -> str:
 
 
 def parse_command(cmd: dict) -> CommandInfo:
-    """コマンドを解析"""
     cmd_type = cmd.get('$type', '')
     type_name = extract_command_type_name(cmd_type)
+    command = CommandInfo(type=type_name, description=generate_command_description(cmd, type_name), details={})
 
-    command = CommandInfo(
-        type=type_name,
-        description=generate_command_description(cmd, type_name),
-        details={}
-    )
-
-    # 条件分岐コマンド
     if type_name == 'ConditionCommand' or 'ConditionCommand' in cmd_type:
         command.description = f"IF {format_condition(cmd.get('Condition'))}"
-        command.sub_commands = (
-            parse_commands(cmd.get('TrueCommands', [])) +
-            parse_commands(cmd.get('FalseCommands', []))
-        )
+        command.sub_commands = parse_commands(cmd.get('TrueCommands', [])) + parse_commands(cmd.get('FalseCommands', []))
 
-    # SQLコマンド
     if 'ExecuteSqlCommand' in cmd_type:
         sql = cmd.get('SqlStatement', '')
         command.details = {'sql': sql}
         command.description = f"SQL実行: {sql[:100]}..."
 
-    # テーブル操作
     if 'UpdateTableDataCommand' in cmd_type:
         command.details = {'table': cmd.get('TableName'), 'mappings': cmd.get('ColumnMappings')}
         command.description = f"テーブル更新: {cmd.get('TableName')}"
 
-    # メール送信
     if 'SendEmailCommand' in cmd_type:
         command.details = {'to': cmd.get('EmailTo'), 'subject': cmd.get('EmailSubject')}
         command.description = f"メール送信: {cmd.get('EmailSubject', '(件名なし)')}"
@@ -348,43 +509,28 @@ def parse_command(cmd: dict) -> CommandInfo:
 
 
 def parse_commands(commands: list) -> list:
-    """コマンドリストを解析"""
     return [parse_command(cmd) for cmd in commands]
 
 
 def parse_workflow(table_name: str, wf_data: dict) -> WorkflowInfo:
-    """ワークフローを解析"""
-    states = []
-    for s in wf_data.get('States', []):
-        states.append(StateInfo(
-            name=s.get('Name', ''),
-            is_initial=s.get('IsInitialState', False),
-            is_final=s.get('IsFinalState', False)
-        ))
-
-    transitions = []
-    for t in wf_data.get('Transitions', []):
-        transitions.append(TransitionInfo(
-            from_state=t.get('SourceStateName', ''),
-            to_state=t.get('TargetStateName', ''),
-            action=t.get('ActionName', ''),
-            conditions=parse_conditions(t.get('Condition')),
-            assignees=parse_assignees(t.get('Assignees', [])),
-            commands=parse_commands(t.get('Commands', []))
-        ))
-
+    states = [StateInfo(name=s.get('Name', ''), is_initial=s.get('IsInitialState', False), is_final=s.get('IsFinalState', False)) for s in wf_data.get('States', [])]
+    transitions = [TransitionInfo(
+        from_state=t.get('SourceStateName', ''),
+        to_state=t.get('TargetStateName', ''),
+        action=t.get('ActionName', ''),
+        conditions=parse_conditions(t.get('Condition')),
+        assignees=parse_assignees(t.get('Assignees', [])),
+        commands=parse_commands(t.get('Commands', []))
+    ) for t in wf_data.get('Transitions', [])]
     return WorkflowInfo(table_name=table_name, states=states, transitions=transitions)
 
 
 def flatten_commands_to_text(commands: list, depth: int = 0) -> list:
-    """コマンドをテキスト形式にフラット化"""
     lines = []
     indent = '  ' * depth
-
     for cmd in commands:
         cmd_type = cmd.get('$type', '')
         type_name = extract_command_type_name(cmd_type)
-
         if 'ConditionCommand' in cmd_type:
             lines.append(f"{indent}IF {format_condition(cmd.get('Condition'))} THEN")
             if cmd.get('TrueCommands'):
@@ -400,8 +546,7 @@ def flatten_commands_to_text(commands: list, depth: int = 0) -> list:
             lines.append(f"{indent}END LOOP")
         elif 'ExecuteSqlCommand' in cmd_type:
             lines.append(f"{indent}EXECUTE SQL:")
-            sql = cmd.get('SqlStatement', '')
-            for line in sql.split('\n'):
+            for line in cmd.get('SqlStatement', '').split('\n'):
                 lines.append(f"{indent}  {line}")
         elif 'UpdateTableDataCommand' in cmd_type:
             lines.append(f"{indent}UPDATE TABLE: {cmd.get('TableName')}")
@@ -416,42 +561,40 @@ def flatten_commands_to_text(commands: list, depth: int = 0) -> list:
             lines.append(f"{indent}CALL SERVER COMMAND: {cmd.get('ServerCommandName', '(不明)')}")
         else:
             lines.append(f"{indent}{type_name}")
-
     return lines
 
 
 def infer_parameter_type(validation_info: Optional[dict]) -> str:
-    """DataValidationInfoからパラメータ型を推測"""
     if not validation_info:
         return 'Text'
-
     number_type = validation_info.get('NumberType')
-    type_map = {4: 'DateTime', 1: 'Integer', 2: 'Decimal'}
-    return type_map.get(number_type, 'Text')
+    return {4: 'DateTime', 1: 'Integer', 2: 'Decimal'}.get(number_type, 'Text')
 
 
-def analyze_project(file_path: str, progress_callback=None) -> AnalysisResult:
+def analyze_project(file_path: str, progress_callback=None, limits=None) -> AnalysisResult:
     """Forguncyプロジェクトを解析"""
     def send_progress(pct, msg):
         if progress_callback:
             progress_callback(pct, msg)
 
     project_name = Path(file_path).stem
+    limits = limits or FEATURE_LIMITS['FREE']
 
     with zipfile.ZipFile(file_path, 'r') as zf:
         entries = zf.namelist()
 
         send_progress(15, 'テーブル定義を解析しています...')
-        tables = analyze_tables(zf, entries)
+        tables = analyze_tables(zf, entries, int(limits.get('max_tables', 5)))
 
         send_progress(25, 'ページ定義を解析しています...')
-        pages = analyze_pages(zf, entries)
+        pages = analyze_pages(zf, entries, int(limits.get('max_pages', 10)))
 
         send_progress(35, 'ワークフローを解析しています...')
-        workflows = [t.workflow for t in tables if t.workflow]
+        max_wf = int(limits.get('max_workflows', 1))
+        workflows = [t.workflow for t in tables if t.workflow][:max_wf]
 
         send_progress(45, 'サーバーコマンドを解析しています...')
-        server_commands = analyze_server_commands(zf, entries)
+        server_commands = analyze_server_commands(zf, entries, int(limits.get('max_server_commands', 3)))
 
     summary = AnalysisSummary(
         table_count=len(tables),
@@ -462,57 +605,38 @@ def analyze_project(file_path: str, progress_callback=None) -> AnalysisResult:
         total_relations=sum(len(t.relations) for t in tables)
     )
 
-    return AnalysisResult(
-        project_name=project_name,
-        tables=tables,
-        pages=pages,
-        workflows=workflows,
-        server_commands=server_commands,
-        summary=summary
-    )
+    return AnalysisResult(project_name=project_name, tables=tables, pages=pages, workflows=workflows, server_commands=server_commands, summary=summary)
 
 
-def analyze_tables(zf: zipfile.ZipFile, entries: list) -> list:
-    """テーブル定義を解析"""
+def analyze_tables(zf: zipfile.ZipFile, entries: list, max_count: int = 999) -> list:
     tables = []
-    table_entries = [e for e in entries if e.startswith('Tables/') and e.endswith('.json')]
+    table_entries = [e for e in entries if e.startswith('Tables/') and e.endswith('.json')][:max_count]
 
     for entry in table_entries:
         try:
             content = zf.read(entry).decode('utf-8')
             data = extract_json(content)
-
             path_parts = entry.split('/')
             folder = path_parts[1] if len(path_parts) > 2 else ''
 
-            columns = []
-            for col in data.get('Columns', []):
-                columns.append(ColumnInfo(
-                    name=col.get('Name', ''),
-                    type=extract_column_type(col.get('ColumnType')),
-                    required=col.get('Required', False),
-                    unique=col.get('Unique', False),
-                    default_value=str(col['DefaultValue']) if col.get('DefaultValue') is not None else None,
-                    description=col.get('Description')
-                ))
+            columns = [ColumnInfo(
+                name=col.get('Name', ''),
+                type=extract_column_type(col.get('ColumnType')),
+                required=col.get('Required', False),
+                unique=col.get('Unique', False),
+                default_value=str(col['DefaultValue']) if col.get('DefaultValue') is not None else None,
+                description=col.get('Description')
+            ) for col in data.get('Columns', [])]
 
-            relations = []
-            for rel in data.get('Relations', []):
-                relations.append(RelationInfo(
-                    target_table=rel.get('TargetTableName', ''),
-                    source_column=rel.get('SourceColumnName', ''),
-                    target_column=rel.get('TargetColumnName', ''),
-                    relation_type=rel.get('RelationType', 'OneToMany')
-                ))
+            relations = [RelationInfo(
+                target_table=rel.get('TargetTableName', ''),
+                source_column=rel.get('SourceColumnName', ''),
+                target_column=rel.get('TargetColumnName', ''),
+                relation_type=rel.get('RelationType', 'OneToMany')
+            ) for rel in data.get('Relations', [])]
 
-            table = TableInfo(
-                name=data.get('Name', Path(entry).stem),
-                folder=folder,
-                columns=columns,
-                relations=relations
-            )
+            table = TableInfo(name=data.get('Name', Path(entry).stem), folder=folder, columns=columns, relations=relations)
 
-            # ワークフロー解析
             if data.get('BindingRelatedWorkflow'):
                 table.workflow = parse_workflow(table.name, data['BindingRelatedWorkflow'])
 
@@ -523,39 +647,24 @@ def analyze_tables(zf: zipfile.ZipFile, entries: list) -> list:
     return tables
 
 
-def analyze_pages(zf: zipfile.ZipFile, entries: list) -> list:
-    """ページ定義を解析"""
+def analyze_pages(zf: zipfile.ZipFile, entries: list, max_count: int = 999) -> list:
     pages = []
 
-    # 通常ページ
-    for entry in [e for e in entries if e.startswith('Pages/') and e.endswith('.json')]:
+    for entry in [e for e in entries if e.startswith('Pages/') and e.endswith('.json')][:max_count]:
         try:
             content = zf.read(entry).decode('utf-8')
             data = extract_json(content)
             elements = extract_page_elements(data)
-
-            pages.append(PageInfo(
-                name=data.get('Name', Path(entry).stem),
-                page_type='page',
-                path=entry,
-                **elements
-            ))
+            pages.append(PageInfo(name=data.get('Name', Path(entry).stem), page_type='page', path=entry, **elements))
         except Exception as e:
             print(f"Error parsing page {entry}: {e}")
 
-    # マスターページ
     for entry in [e for e in entries if e.startswith('MasterPages/') and e.endswith('.json')]:
         try:
             content = zf.read(entry).decode('utf-8')
             data = extract_json(content)
             elements = extract_page_elements(data)
-
-            pages.append(PageInfo(
-                name=data.get('Name', Path(entry).stem),
-                page_type='masterPage',
-                path=entry,
-                **elements
-            ))
+            pages.append(PageInfo(name=data.get('Name', Path(entry).stem), page_type='masterPage', path=entry, **elements))
         except Exception as e:
             print(f"Error parsing master page {entry}: {e}")
 
@@ -563,111 +672,63 @@ def analyze_pages(zf: zipfile.ZipFile, entries: list) -> list:
 
 
 def extract_page_elements(data: dict) -> dict:
-    """ページ内の要素を抽出"""
-    buttons = []
-    formulas = []
-    cell_commands = []
-
+    buttons, formulas, cell_commands = [], [], []
     attach_infos = data.get('AttachInfos', {})
 
     for cell_address, cell_data in attach_infos.items():
         cell_type = cell_data.get('CellType', {})
-
-        # 数式抽出
         if cell_data.get('Formula'):
             formulas.append(FormulaInfo(cell=cell_address, formula=str(cell_data['Formula'])))
 
         if cell_type:
             type_str = cell_type.get('$type', '')
-
-            # メニュー項目
             if 'MenuCellType' in type_str or 'ForguncyMenuCellType' in type_str:
-                items = cell_type.get('Items', [])
-                extract_menu_items(items, buttons, cell_address)
-
-            # ボタンセルタイプ
+                extract_menu_items(cell_type.get('Items', []), buttons, cell_address)
             if 'ButtonCellType' in type_str:
                 text = cell_type.get('Text') or cell_type.get('Content') or 'ボタン'
                 command_list = cell_type.get('CommandList', [])
                 if command_list:
-                    buttons.append(ButtonInfo(
-                        name=text,
-                        cell=cell_address,
-                        commands=parse_commands(command_list)
-                    ))
-
-            # その他のセルコマンド
+                    buttons.append(ButtonInfo(name=text, cell=cell_address, commands=parse_commands(command_list)))
             command_list = cell_type.get('CommandList', [])
             if command_list and 'ButtonCellType' not in type_str:
-                cell_commands.append(CellCommandInfo(
-                    cell=cell_address,
-                    event='Click',
-                    commands=parse_commands(command_list)
-                ))
+                cell_commands.append(CellCommandInfo(cell=cell_address, event='Click', commands=parse_commands(command_list)))
 
     return {'buttons': buttons, 'formulas': formulas, 'cell_commands': cell_commands}
 
 
 def extract_menu_items(items: list, buttons: list, base_cell: str):
-    """メニュー項目からコマンドを抽出"""
     for item in items:
         if item.get('CommandList'):
-            buttons.append(ButtonInfo(
-                name=f"メニュー: {item.get('Text', '(名称なし)')}",
-                cell=base_cell,
-                commands=parse_commands(item['CommandList'])
-            ))
-
+            buttons.append(ButtonInfo(name=f"メニュー: {item.get('Text', '(名称なし)')}", cell=base_cell, commands=parse_commands(item['CommandList'])))
         if item.get('SubItems'):
             extract_menu_items(item['SubItems'], buttons, base_cell)
 
 
-def analyze_server_commands(zf: zipfile.ZipFile, entries: list) -> list:
-    """サーバーコマンドを解析"""
+def analyze_server_commands(zf: zipfile.ZipFile, entries: list, max_count: int = 999) -> list:
     server_commands = []
-    cmd_entries = [e for e in entries if e.startswith('ServerCommands/') and e.endswith('.json')]
+    cmd_entries = [e for e in entries if e.startswith('ServerCommands/') and e.endswith('.json')][:max_count]
 
     for entry in cmd_entries:
         try:
             content = zf.read(entry).decode('utf-8')
             data = extract_json(content)
-
             path_parts = entry.split('/')
             folder = path_parts[1] if len(path_parts) > 2 else ''
 
             raw_commands = parse_commands(data.get('Commands', []))
             commands = flatten_commands_to_text(data.get('Commands', []))
 
-            # パラメータ取得
             parameters = []
             triggers = data.get('Triggers', [])
             if triggers:
-                trigger_params = triggers[0].get('Parameters', [])
-                for p in trigger_params:
-                    parameters.append(ParameterInfo(
-                        name=p.get('Name', ''),
-                        type=infer_parameter_type(p.get('DataValidationInfo')),
-                        required=True
-                    ))
+                for p in triggers[0].get('Parameters', []):
+                    parameters.append(ParameterInfo(name=p.get('Name', ''), type=infer_parameter_type(p.get('DataValidationInfo')), required=True))
 
-            # 旧形式
             if not parameters and data.get('Parameters'):
                 for p in data['Parameters']:
-                    parameters.append(ParameterInfo(
-                        name=p.get('Name', ''),
-                        type=extract_column_type(p.get('Type')),
-                        required=p.get('Required', False),
-                        default_value=str(p['DefaultValue']) if p.get('DefaultValue') is not None else None
-                    ))
+                    parameters.append(ParameterInfo(name=p.get('Name', ''), type=extract_column_type(p.get('Type')), required=p.get('Required', False), default_value=str(p['DefaultValue']) if p.get('DefaultValue') is not None else None))
 
-            server_commands.append(ServerCommandInfo(
-                name=data.get('Name', Path(entry).stem),
-                folder=folder,
-                path=entry,
-                commands=commands,
-                raw_commands=raw_commands,
-                parameters=parameters
-            ))
+            server_commands.append(ServerCommandInfo(name=data.get('Name', Path(entry).stem), folder=folder, path=entry, commands=commands, raw_commands=raw_commands, parameters=parameters))
         except Exception as e:
             print(f"Error parsing server command {entry}: {e}")
 
@@ -675,16 +736,68 @@ def analyze_server_commands(zf: zipfile.ZipFile, entries: list) -> list:
 
 
 # =============================================================================
-# Word文書生成
+# 差分比較
+# =============================================================================
+
+@dataclass
+class DiffResult:
+    added_tables: list = field(default_factory=list)
+    removed_tables: list = field(default_factory=list)
+    modified_tables: list = field(default_factory=list)
+    added_pages: list = field(default_factory=list)
+    removed_pages: list = field(default_factory=list)
+    added_server_commands: list = field(default_factory=list)
+    removed_server_commands: list = field(default_factory=list)
+    modified_server_commands: list = field(default_factory=list)
+
+
+def compare_projects(old_analysis: AnalysisResult, new_analysis: AnalysisResult) -> DiffResult:
+    """2つのプロジェクトを比較"""
+    diff = DiffResult()
+
+    # テーブル比較
+    old_tables = {t.name: t for t in old_analysis.tables}
+    new_tables = {t.name: t for t in new_analysis.tables}
+
+    diff.added_tables = [t for name, t in new_tables.items() if name not in old_tables]
+    diff.removed_tables = [t for name, t in old_tables.items() if name not in new_tables]
+
+    for name in set(old_tables.keys()) & set(new_tables.keys()):
+        old_t, new_t = old_tables[name], new_tables[name]
+        old_cols = {c.name: c for c in old_t.columns}
+        new_cols = {c.name: c for c in new_t.columns}
+        if old_cols != new_cols or len(old_t.relations) != len(new_t.relations):
+            diff.modified_tables.append({'name': name, 'old': old_t, 'new': new_t})
+
+    # ページ比較
+    old_pages = {p.name for p in old_analysis.pages}
+    new_pages = {p.name for p in new_analysis.pages}
+    diff.added_pages = [p for p in new_analysis.pages if p.name not in old_pages]
+    diff.removed_pages = [p for p in old_analysis.pages if p.name not in new_pages]
+
+    # サーバーコマンド比較
+    old_cmds = {c.name: c for c in old_analysis.server_commands}
+    new_cmds = {c.name: c for c in new_analysis.server_commands}
+
+    diff.added_server_commands = [c for name, c in new_cmds.items() if name not in old_cmds]
+    diff.removed_server_commands = [c for name, c in old_cmds.items() if name not in new_cmds]
+
+    for name in set(old_cmds.keys()) & set(new_cmds.keys()):
+        if old_cmds[name].commands != new_cmds[name].commands:
+            diff.modified_server_commands.append({'name': name, 'old': old_cmds[name], 'new': new_cmds[name]})
+
+    return diff
+
+
+# =============================================================================
+# Word出力
 # =============================================================================
 
 def generate_spec_document(analysis: AnalysisResult, output_dir: str) -> str:
     """仕様書ドキュメントを生成"""
     os.makedirs(output_dir, exist_ok=True)
-
     doc = Document()
 
-    # フォント設定
     style = doc.styles['Normal']
     style.font.name = 'Yu Gothic'
     style._element.rPr.rFonts.set(qn('w:eastAsia'), 'Yu Gothic')
@@ -693,13 +806,8 @@ def generate_spec_document(analysis: AnalysisResult, output_dir: str) -> str:
     # タイトル
     title = doc.add_heading(analysis.project_name, 0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    subtitle = doc.add_paragraph('システム仕様書')
-    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    date_para = doc.add_paragraph(f'生成日: {datetime.now().strftime("%Y年%m月%d日")}')
-    date_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
+    doc.add_paragraph('システム仕様書').alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_paragraph(f'生成日: {datetime.now().strftime("%Y年%m月%d日")}').alignment = WD_ALIGN_PARAGRAPH.CENTER
     gen_para = doc.add_paragraph('Forguncy Insight により自動生成')
     gen_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     gen_para.runs[0].italic = True
@@ -715,17 +823,14 @@ def generate_spec_document(analysis: AnalysisResult, output_dir: str) -> str:
         doc.add_paragraph('4. ワークフロー定義')
     if analysis.server_commands:
         doc.add_paragraph('5. サーバーコマンド')
-    doc.add_paragraph('6. ER図（Mermaid形式）')
 
     doc.add_page_break()
 
     # 1. システム概要
     doc.add_heading('1. システム概要', 1)
-    doc.add_heading('1.1 プロジェクト概要', 2)
-
     summary_table = doc.add_table(rows=7, cols=2)
     summary_table.style = 'Table Grid'
-    summary_data = [
+    for i, (label, value) in enumerate([
         ('プロジェクト名', analysis.project_name),
         ('テーブル数', f'{analysis.summary.table_count}件'),
         ('ページ数', f'{analysis.summary.page_count}件'),
@@ -733,8 +838,7 @@ def generate_spec_document(analysis: AnalysisResult, output_dir: str) -> str:
         ('サーバーコマンド数', f'{analysis.summary.server_command_count}件'),
         ('総カラム数', f'{analysis.summary.total_columns}件'),
         ('リレーション数', f'{analysis.summary.total_relations}件'),
-    ]
-    for i, (label, value) in enumerate(summary_data):
+    ]):
         summary_table.rows[i].cells[0].text = label
         summary_table.rows[i].cells[1].text = value
 
@@ -742,15 +846,11 @@ def generate_spec_document(analysis: AnalysisResult, output_dir: str) -> str:
 
     # 2. テーブル定義
     doc.add_heading('2. テーブル定義', 1)
-    doc.add_heading('2.1 テーブル一覧', 2)
-
     if analysis.tables:
         table_list = doc.add_table(rows=len(analysis.tables) + 1, cols=5)
         table_list.style = 'Table Grid'
-        headers = ['No.', 'テーブル名', 'フォルダ', 'カラム数', 'リレーション']
-        for j, h in enumerate(headers):
+        for j, h in enumerate(['No.', 'テーブル名', 'フォルダ', 'カラム数', 'リレーション']):
             table_list.rows[0].cells[j].text = h
-
         for i, t in enumerate(analysis.tables):
             table_list.rows[i + 1].cells[0].text = str(i + 1)
             table_list.rows[i + 1].cells[1].text = t.name
@@ -758,18 +858,13 @@ def generate_spec_document(analysis: AnalysisResult, output_dir: str) -> str:
             table_list.rows[i + 1].cells[3].text = str(len(t.columns))
             table_list.rows[i + 1].cells[4].text = str(len(t.relations))
 
-    doc.add_heading('2.2 テーブル詳細', 2)
-
     for table in analysis.tables:
         doc.add_heading(table.name, 3)
-
         if table.columns:
             col_table = doc.add_table(rows=len(table.columns) + 1, cols=5)
             col_table.style = 'Table Grid'
-            col_headers = ['カラム名', 'データ型', '必須', 'ユニーク', 'デフォルト値']
-            for j, h in enumerate(col_headers):
+            for j, h in enumerate(['カラム名', 'データ型', '必須', 'ユニーク', 'デフォルト値']):
                 col_table.rows[0].cells[j].text = h
-
             for i, c in enumerate(table.columns):
                 col_table.rows[i + 1].cells[0].text = c.name
                 col_table.rows[i + 1].cells[1].text = c.type
@@ -777,33 +872,15 @@ def generate_spec_document(analysis: AnalysisResult, output_dir: str) -> str:
                 col_table.rows[i + 1].cells[3].text = '○' if c.unique else ''
                 col_table.rows[i + 1].cells[4].text = c.default_value or ''
 
-        if table.relations:
-            doc.add_paragraph('リレーション:', style='Intense Quote')
-            rel_table = doc.add_table(rows=len(table.relations) + 1, cols=4)
-            rel_table.style = 'Table Grid'
-            rel_headers = ['種別', 'ソースカラム', '参照先テーブル', '参照先カラム']
-            for j, h in enumerate(rel_headers):
-                rel_table.rows[0].cells[j].text = h
-
-            for i, r in enumerate(table.relations):
-                rel_table.rows[i + 1].cells[0].text = r.relation_type
-                rel_table.rows[i + 1].cells[1].text = r.source_column
-                rel_table.rows[i + 1].cells[2].text = r.target_table
-                rel_table.rows[i + 1].cells[3].text = r.target_column
-
     doc.add_page_break()
 
     # 3. 画面一覧
     doc.add_heading('3. 画面一覧', 1)
-    doc.add_heading('3.1 画面一覧', 2)
-
     if analysis.pages:
         page_table = doc.add_table(rows=len(analysis.pages) + 1, cols=5)
         page_table.style = 'Table Grid'
-        page_headers = ['No.', '画面名', '種別', 'ボタン数', '数式数']
-        for j, h in enumerate(page_headers):
+        for j, h in enumerate(['No.', '画面名', '種別', 'ボタン数', '数式数']):
             page_table.rows[0].cells[j].text = h
-
         for i, p in enumerate(analysis.pages):
             page_table.rows[i + 1].cells[0].text = str(i + 1)
             page_table.rows[i + 1].cells[1].text = p.name
@@ -811,191 +888,183 @@ def generate_spec_document(analysis: AnalysisResult, output_dir: str) -> str:
             page_table.rows[i + 1].cells[3].text = str(len(p.buttons))
             page_table.rows[i + 1].cells[4].text = str(len(p.formulas))
 
-    # 画面詳細（ボタンがあるページのみ）
-    pages_with_buttons = [p for p in analysis.pages if p.buttons or p.formulas]
-
-    if pages_with_buttons:
-        doc.add_heading('3.2 画面詳細', 2)
-
-        for page in pages_with_buttons:
-            doc.add_heading(page.name, 3)
-
-            if page.buttons:
-                doc.add_paragraph('ボタン:', style='Intense Quote')
-                for button in page.buttons:
-                    para = doc.add_paragraph(style='List Bullet')
-                    para.add_run(button.name)
-                    para.add_run(f' ({len(button.commands)}個のコマンド)').italic = True
-
-                    for cmd in button.commands:
-                        cmd_para = doc.add_paragraph(f'  • {cmd.description}')
-                        cmd_para.paragraph_format.left_indent = Inches(0.5)
-
-            if page.formulas:
-                doc.add_paragraph('数式:', style='Intense Quote')
-                formula_table = doc.add_table(rows=min(len(page.formulas), 20) + 1, cols=2)
-                formula_table.style = 'Table Grid'
-                formula_table.rows[0].cells[0].text = 'セル'
-                formula_table.rows[0].cells[1].text = '数式'
-
-                for i, f in enumerate(page.formulas[:20]):
-                    formula_table.rows[i + 1].cells[0].text = f.cell
-                    formula_table.rows[i + 1].cells[1].text = f.formula
-
-                if len(page.formulas) > 20:
-                    doc.add_paragraph(f'※ 他{len(page.formulas) - 20}件の数式があります').italic = True
-
-    # 4. ワークフロー定義
+    # 4. ワークフロー
     if analysis.workflows:
         doc.add_page_break()
         doc.add_heading('4. ワークフロー定義', 1)
-
         for wf in analysis.workflows:
             doc.add_heading(f'ワークフロー: {wf.table_name}', 2)
-
-            # 状態一覧
-            doc.add_heading('状態一覧', 3)
-            state_table = doc.add_table(rows=len(wf.states) + 1, cols=3)
-            state_table.style = 'Table Grid'
-            state_table.rows[0].cells[0].text = '状態名'
-            state_table.rows[0].cells[1].text = '初期状態'
-            state_table.rows[0].cells[2].text = '終了状態'
-
-            for i, s in enumerate(wf.states):
-                state_table.rows[i + 1].cells[0].text = s.name
-                state_table.rows[i + 1].cells[1].text = '○' if s.is_initial else ''
-                state_table.rows[i + 1].cells[2].text = '○' if s.is_final else ''
-
-            # 遷移一覧
-            doc.add_heading('遷移一覧', 3)
-            trans_table = doc.add_table(rows=len(wf.transitions) + 1, cols=4)
-            trans_table.style = 'Table Grid'
-            trans_table.rows[0].cells[0].text = 'アクション'
-            trans_table.rows[0].cells[1].text = '遷移元'
-            trans_table.rows[0].cells[2].text = '遷移先'
-            trans_table.rows[0].cells[3].text = '担当者'
-
-            for i, t in enumerate(wf.transitions):
-                trans_table.rows[i + 1].cells[0].text = t.action
-                trans_table.rows[i + 1].cells[1].text = t.from_state
-                trans_table.rows[i + 1].cells[2].text = t.to_state
-                assignees_str = ', '.join([f'{a.type}: {a.value}' for a in t.assignees]) or '未設定'
-                trans_table.rows[i + 1].cells[3].text = assignees_str
-
-            # Mermaidフロー図
-            doc.add_heading('フロー図（Mermaid形式）', 3)
-            mermaid = generate_workflow_mermaid(wf)
-            mermaid_para = doc.add_paragraph(mermaid)
-            mermaid_para.style = 'Quote'
+            if wf.states:
+                state_table = doc.add_table(rows=len(wf.states) + 1, cols=3)
+                state_table.style = 'Table Grid'
+                state_table.rows[0].cells[0].text = '状態名'
+                state_table.rows[0].cells[1].text = '初期状態'
+                state_table.rows[0].cells[2].text = '終了状態'
+                for i, s in enumerate(wf.states):
+                    state_table.rows[i + 1].cells[0].text = s.name
+                    state_table.rows[i + 1].cells[1].text = '○' if s.is_initial else ''
+                    state_table.rows[i + 1].cells[2].text = '○' if s.is_final else ''
 
     # 5. サーバーコマンド
     if analysis.server_commands:
         doc.add_page_break()
-        doc.add_heading('5. サーバーコマンド（ビジネスロジック）', 1)
-
-        doc.add_heading('5.1 サーバーコマンド一覧', 2)
-        cmd_list_table = doc.add_table(rows=len(analysis.server_commands) + 1, cols=5)
+        doc.add_heading('5. サーバーコマンド', 1)
+        cmd_list_table = doc.add_table(rows=len(analysis.server_commands) + 1, cols=4)
         cmd_list_table.style = 'Table Grid'
-        cmd_headers = ['No.', 'コマンド名', 'フォルダ', 'パラメータ数', '行数']
-        for j, h in enumerate(cmd_headers):
+        for j, h in enumerate(['No.', 'コマンド名', 'フォルダ', 'パラメータ数']):
             cmd_list_table.rows[0].cells[j].text = h
-
         for i, c in enumerate(analysis.server_commands):
             cmd_list_table.rows[i + 1].cells[0].text = str(i + 1)
             cmd_list_table.rows[i + 1].cells[1].text = c.name
             cmd_list_table.rows[i + 1].cells[2].text = c.folder or '-'
             cmd_list_table.rows[i + 1].cells[3].text = str(len(c.parameters))
-            cmd_list_table.rows[i + 1].cells[4].text = str(len(c.commands))
 
-        doc.add_heading('5.2 サーバーコマンド詳細', 2)
-
-        for cmd in analysis.server_commands:
-            doc.add_heading(cmd.name, 3)
-
-            if cmd.parameters:
-                doc.add_paragraph('パラメータ:', style='Intense Quote')
-                param_table = doc.add_table(rows=len(cmd.parameters) + 1, cols=4)
-                param_table.style = 'Table Grid'
-                param_table.rows[0].cells[0].text = 'パラメータ名'
-                param_table.rows[0].cells[1].text = 'データ型'
-                param_table.rows[0].cells[2].text = '必須'
-                param_table.rows[0].cells[3].text = 'デフォルト値'
-
-                for i, p in enumerate(cmd.parameters):
-                    param_table.rows[i + 1].cells[0].text = p.name
-                    param_table.rows[i + 1].cells[1].text = p.type
-                    param_table.rows[i + 1].cells[2].text = '○' if p.required else ''
-                    param_table.rows[i + 1].cells[3].text = p.default_value or ''
-
-            doc.add_paragraph('処理内容:', style='Intense Quote')
-            display_lines = cmd.commands[:50]
-            code_para = doc.add_paragraph('\n'.join(display_lines))
-            code_para.style = 'Quote'
-
-            if len(cmd.commands) > 50:
-                doc.add_paragraph(f'※ 他{len(cmd.commands) - 50}行の処理があります').italic = True
-
-    # 6. ER図
-    doc.add_page_break()
-    doc.add_heading('6. ER図（Mermaid形式）', 1)
-    doc.add_paragraph('以下のMermaid記法をMermaid Live Editor等で表示できます。').italic = True
-
-    er_mermaid = generate_er_diagram(analysis.tables)
-    er_para = doc.add_paragraph(er_mermaid)
-    er_para.style = 'Quote'
-
-    # 保存
     file_path = os.path.join(output_dir, f'{analysis.project_name}_仕様書.docx')
     doc.save(file_path)
-
     return file_path
 
 
-def sanitize_mermaid_id(id_str: str) -> str:
-    """Mermaid用にIDをサニタイズ"""
-    return re.sub(r'[^a-zA-Z0-9_\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]', '_', id_str)
+# =============================================================================
+# Excel出力
+# =============================================================================
+
+def generate_excel_document(analysis: AnalysisResult, output_dir: str) -> str:
+    """Excel形式で出力"""
+    if not EXCEL_AVAILABLE:
+        raise ImportError("openpyxlがインストールされていません。pip install openpyxl を実行してください。")
+
+    os.makedirs(output_dir, exist_ok=True)
+    wb = Workbook()
+
+    # ヘッダースタイル
+    header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+    header_font = Font(bold=True, color='FFFFFF')
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+
+    # サマリーシート
+    ws_summary = wb.active
+    ws_summary.title = 'サマリー'
+    summary_data = [
+        ['項目', '値'],
+        ['プロジェクト名', analysis.project_name],
+        ['テーブル数', analysis.summary.table_count],
+        ['ページ数', analysis.summary.page_count],
+        ['ワークフロー数', analysis.summary.workflow_count],
+        ['サーバーコマンド数', analysis.summary.server_command_count],
+        ['総カラム数', analysis.summary.total_columns],
+        ['リレーション数', analysis.summary.total_relations],
+        ['生成日', datetime.now().strftime('%Y-%m-%d %H:%M')],
+    ]
+    for row_idx, row in enumerate(summary_data, 1):
+        for col_idx, value in enumerate(row, 1):
+            cell = ws_summary.cell(row=row_idx, column=col_idx, value=value)
+            cell.border = thin_border
+            if row_idx == 1:
+                cell.fill = header_fill
+                cell.font = header_font
+
+    ws_summary.column_dimensions['A'].width = 20
+    ws_summary.column_dimensions['B'].width = 40
+
+    # テーブル一覧シート
+    ws_tables = wb.create_sheet('テーブル一覧')
+    table_headers = ['No.', 'テーブル名', 'フォルダ', 'カラム数', 'リレーション数']
+    for col_idx, header in enumerate(table_headers, 1):
+        cell = ws_tables.cell(row=1, column=col_idx, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.border = thin_border
+
+    for row_idx, t in enumerate(analysis.tables, 2):
+        values = [row_idx - 1, t.name, t.folder or '-', len(t.columns), len(t.relations)]
+        for col_idx, value in enumerate(values, 1):
+            cell = ws_tables.cell(row=row_idx, column=col_idx, value=value)
+            cell.border = thin_border
+
+    # カラム定義シート
+    ws_columns = wb.create_sheet('カラム定義')
+    col_headers = ['テーブル名', 'カラム名', 'データ型', '必須', 'ユニーク', 'デフォルト値']
+    for col_idx, header in enumerate(col_headers, 1):
+        cell = ws_columns.cell(row=1, column=col_idx, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.border = thin_border
+
+    row_idx = 2
+    for t in analysis.tables:
+        for c in t.columns:
+            values = [t.name, c.name, c.type, '○' if c.required else '', '○' if c.unique else '', c.default_value or '']
+            for col_idx, value in enumerate(values, 1):
+                cell = ws_columns.cell(row=row_idx, column=col_idx, value=value)
+                cell.border = thin_border
+            row_idx += 1
+
+    # ページ一覧シート
+    ws_pages = wb.create_sheet('ページ一覧')
+    page_headers = ['No.', 'ページ名', '種別', 'ボタン数', '数式数']
+    for col_idx, header in enumerate(page_headers, 1):
+        cell = ws_pages.cell(row=1, column=col_idx, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.border = thin_border
+
+    for row_idx, p in enumerate(analysis.pages, 2):
+        values = [row_idx - 1, p.name, 'マスターページ' if p.page_type == 'masterPage' else 'ページ', len(p.buttons), len(p.formulas)]
+        for col_idx, value in enumerate(values, 1):
+            cell = ws_pages.cell(row=row_idx, column=col_idx, value=value)
+            cell.border = thin_border
+
+    # サーバーコマンドシート
+    ws_cmds = wb.create_sheet('サーバーコマンド')
+    cmd_headers = ['No.', 'コマンド名', 'フォルダ', 'パラメータ数', '処理行数']
+    for col_idx, header in enumerate(cmd_headers, 1):
+        cell = ws_cmds.cell(row=1, column=col_idx, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.border = thin_border
+
+    for row_idx, c in enumerate(analysis.server_commands, 2):
+        values = [row_idx - 1, c.name, c.folder or '-', len(c.parameters), len(c.commands)]
+        for col_idx, value in enumerate(values, 1):
+            cell = ws_cmds.cell(row=row_idx, column=col_idx, value=value)
+            cell.border = thin_border
+
+    # ER図シート (テキスト形式)
+    ws_er = wb.create_sheet('ER図(Mermaid)')
+    ws_er.cell(row=1, column=1, value='以下をMermaid Live Editorに貼り付けてください')
+    er_code = generate_er_mermaid(analysis.tables)
+    ws_er.cell(row=3, column=1, value=er_code)
+
+    file_path = os.path.join(output_dir, f'{analysis.project_name}_仕様書.xlsx')
+    wb.save(file_path)
+    return file_path
 
 
-def generate_workflow_mermaid(wf: WorkflowInfo) -> str:
-    """ワークフローのMermaid図を生成"""
-    lines = ['stateDiagram-v2']
-
-    for state in wf.states:
-        if state.is_initial:
-            lines.append(f'  [*] --> {sanitize_mermaid_id(state.name)}')
-        if state.is_final:
-            lines.append(f'  {sanitize_mermaid_id(state.name)} --> [*]')
-
-    for trans in wf.transitions:
-        from_state = sanitize_mermaid_id(trans.from_state)
-        to_state = sanitize_mermaid_id(trans.to_state)
-        lines.append(f'  {from_state} --> {to_state}: {trans.action}')
-
-    return '\n'.join(lines)
-
-
-def generate_er_diagram(tables: list) -> str:
+def generate_er_mermaid(tables: list) -> str:
     """ER図のMermaid記法を生成"""
-    lines = ['erDiagram']
+    def sanitize(s):
+        return re.sub(r'[^a-zA-Z0-9_\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]', '_', s)
 
+    lines = ['erDiagram']
     for table in tables:
-        lines.append(f'  {sanitize_mermaid_id(table.name)} {{')
+        lines.append(f'  {sanitize(table.name)} {{')
         for col in table.columns[:10]:
-            col_type = re.sub(r'[^a-z]', '', col.type.lower())
+            col_type = re.sub(r'[^a-z]', '', col.type.lower()) or 'string'
             pk = 'PK' if col.name.lower() == 'id' else ''
-            req = 'NOT_NULL' if col.required else ''
-            line = f'    {col_type} {sanitize_mermaid_id(col.name)} {pk} {req}'.strip()
-            lines.append(line)
+            lines.append(f'    {col_type} {sanitize(col.name)} {pk}'.strip())
         if len(table.columns) > 10:
-            lines.append('    string _more_columns "..."')
+            lines.append('    string more_columns "..."')
         lines.append('  }')
 
     for table in tables:
         for rel in table.relations:
-            from_table = sanitize_mermaid_id(table.name)
-            to_table = sanitize_mermaid_id(rel.target_table)
+            from_t = sanitize(table.name)
+            to_t = sanitize(rel.target_table)
             rel_type = '}o--||' if 'Many' in rel.relation_type else '||--||'
-            lines.append(f'  {from_table} {rel_type} {to_table} : "{rel.source_column}"')
+            lines.append(f'  {from_t} {rel_type} {to_t} : "{rel.source_column}"')
 
     return '\n'.join(lines)
 
@@ -1008,90 +1077,168 @@ class ForguncyInsightApp:
     def __init__(self, root: Tk):
         self.root = root
         self.root.title("Forguncy Insight")
-        self.root.geometry("600x400")
+        self.root.geometry("700x550")
         self.root.resizable(True, True)
 
-        # 変数
+        self.license_manager = LicenseManager()
         self.file_path = StringVar()
+        self.file_path2 = StringVar()  # 差分比較用
         self.output_dir = StringVar(value=str(Path.home() / "Documents"))
 
         self.setup_ui()
 
     def setup_ui(self):
-        # メインフレーム
-        main_frame = Frame(self.root, padx=20, pady=20)
-        main_frame.pack(fill='both', expand=True)
+        # Notebook (タブ)
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
 
+        # タブ1: 解析
+        self.tab_analyze = Frame(self.notebook, padx=20, pady=20)
+        self.notebook.add(self.tab_analyze, text='  解析  ')
+        self.setup_analyze_tab()
+
+        # タブ2: 差分比較
+        self.tab_diff = Frame(self.notebook, padx=20, pady=20)
+        self.notebook.add(self.tab_diff, text='  差分比較  ')
+        self.setup_diff_tab()
+
+        # タブ3: ライセンス
+        self.tab_license = Frame(self.notebook, padx=20, pady=20)
+        self.notebook.add(self.tab_license, text='  ライセンス  ')
+        self.setup_license_tab()
+
+    def setup_analyze_tab(self):
         # タイトル
-        title_label = Label(main_frame, text="Forguncy Insight", font=('Helvetica', 18, 'bold'))
-        title_label.pack(pady=(0, 5))
+        Label(self.tab_analyze, text="Forguncy Insight", font=('Helvetica', 18, 'bold')).pack(pady=(0, 5))
+        Label(self.tab_analyze, text="Forguncyプロジェクト解析・仕様書自動生成", font=('Helvetica', 10)).pack(pady=(0, 10))
 
-        subtitle_label = Label(main_frame, text="Forguncyプロジェクト解析・仕様書自動生成", font=('Helvetica', 10))
-        subtitle_label.pack(pady=(0, 20))
+        # ライセンス状態
+        self.license_status = Label(self.tab_analyze, text=f"ライセンス: {self.license_manager.tier_name}", fg='blue')
+        self.license_status.pack()
 
         # ファイル選択
-        file_frame = Frame(main_frame)
+        file_frame = Frame(self.tab_analyze)
         file_frame.pack(fill='x', pady=10)
-
         Label(file_frame, text="プロジェクトファイル (.fgcp):").pack(anchor='w')
-
-        file_input_frame = Frame(file_frame)
-        file_input_frame.pack(fill='x', pady=5)
-
-        file_entry = Entry(file_input_frame, textvariable=self.file_path, state='readonly')
-        file_entry.pack(side='left', fill='x', expand=True)
-
-        browse_btn = Button(file_input_frame, text="参照...", command=self.browse_file)
-        browse_btn.pack(side='right', padx=(10, 0))
+        file_input = Frame(file_frame)
+        file_input.pack(fill='x', pady=5)
+        Entry(file_input, textvariable=self.file_path, state='readonly').pack(side='left', fill='x', expand=True)
+        Button(file_input, text="参照...", command=self.browse_file).pack(side='right', padx=(10, 0))
 
         # 出力フォルダ
-        output_frame = Frame(main_frame)
+        output_frame = Frame(self.tab_analyze)
         output_frame.pack(fill='x', pady=10)
-
         Label(output_frame, text="出力フォルダ:").pack(anchor='w')
+        output_input = Frame(output_frame)
+        output_input.pack(fill='x', pady=5)
+        Entry(output_input, textvariable=self.output_dir).pack(side='left', fill='x', expand=True)
+        Button(output_input, text="変更...", command=self.browse_output).pack(side='right', padx=(10, 0))
 
-        output_input_frame = Frame(output_frame)
-        output_input_frame.pack(fill='x', pady=5)
+        # 出力形式
+        format_frame = Frame(self.tab_analyze)
+        format_frame.pack(fill='x', pady=10)
+        Label(format_frame, text="出力形式:").pack(anchor='w')
 
-        output_entry = Entry(output_input_frame, textvariable=self.output_dir)
-        output_entry.pack(side='left', fill='x', expand=True)
+        self.output_word = ttk.Checkbutton(format_frame, text="Word (.docx)")
+        self.output_word.pack(anchor='w')
+        self.output_word.state(['selected'] if self.license_manager.limits.get('word_export') else ['disabled'])
 
-        output_btn = Button(output_input_frame, text="変更...", command=self.browse_output)
-        output_btn.pack(side='right', padx=(10, 0))
+        self.output_excel = ttk.Checkbutton(format_frame, text="Excel (.xlsx)")
+        self.output_excel.pack(anchor='w')
+        self.output_excel.state(['selected'] if self.license_manager.limits.get('excel_export') else ['disabled'])
 
-        # プログレスバー
-        self.progress = ttk.Progressbar(main_frame, mode='determinate')
-        self.progress.pack(fill='x', pady=20)
-
-        self.status_label = Label(main_frame, text="")
+        # プログレス
+        self.progress = ttk.Progressbar(self.tab_analyze, mode='determinate')
+        self.progress.pack(fill='x', pady=15)
+        self.status_label = Label(self.tab_analyze, text="")
         self.status_label.pack()
 
         # 解析ボタン
-        self.analyze_btn = Button(main_frame, text="解析開始", command=self.start_analysis,
-                                   font=('Helvetica', 12), bg='#2563EB', fg='white',
-                                   padx=30, pady=10)
-        self.analyze_btn.pack(pady=20)
+        self.analyze_btn = Button(self.tab_analyze, text="解析開始", command=self.start_analysis,
+                                   font=('Helvetica', 12), bg='#2563EB', fg='white', padx=30, pady=10)
+        self.analyze_btn.pack(pady=15)
 
-        # バージョン
-        version_label = Label(main_frame, text="Forguncy Insight v1.0.0 - Python Edition",
-                              font=('Helvetica', 8), fg='gray')
-        version_label.pack(side='bottom')
+        # Free版の制限表示
+        if not self.license_manager.is_activated:
+            limits = self.license_manager.limits
+            limit_text = f"Free版制限: テーブル{int(limits['max_tables'])}件, ページ{int(limits['max_pages'])}件, サーバーコマンド{int(limits['max_server_commands'])}件"
+            Label(self.tab_analyze, text=limit_text, fg='gray', font=('Helvetica', 9)).pack()
+
+    def setup_diff_tab(self):
+        Label(self.tab_diff, text="プロジェクト差分比較", font=('Helvetica', 16, 'bold')).pack(pady=(0, 20))
+
+        if not self.license_manager.limits.get('diff_compare'):
+            Label(self.tab_diff, text="この機能はStandard版で利用できます", fg='red').pack(pady=20)
+            Button(self.tab_diff, text="ライセンスを購入", command=lambda: webbrowser.open('https://example.com/buy')).pack()
+            return
+
+        # ファイル1
+        Label(self.tab_diff, text="比較元ファイル (旧バージョン):").pack(anchor='w')
+        file1_frame = Frame(self.tab_diff)
+        file1_frame.pack(fill='x', pady=5)
+        Entry(file1_frame, textvariable=self.file_path).pack(side='left', fill='x', expand=True)
+        Button(file1_frame, text="参照...", command=self.browse_file).pack(side='right', padx=(10, 0))
+
+        # ファイル2
+        Label(self.tab_diff, text="比較先ファイル (新バージョン):").pack(anchor='w', pady=(15, 0))
+        file2_frame = Frame(self.tab_diff)
+        file2_frame.pack(fill='x', pady=5)
+        Entry(file2_frame, textvariable=self.file_path2).pack(side='left', fill='x', expand=True)
+        Button(file2_frame, text="参照...", command=self.browse_file2).pack(side='right', padx=(10, 0))
+
+        # 比較ボタン
+        Button(self.tab_diff, text="差分を比較", command=self.compare_files,
+               font=('Helvetica', 12), bg='#059669', fg='white', padx=30, pady=10).pack(pady=30)
+
+    def setup_license_tab(self):
+        Label(self.tab_license, text="ライセンス管理", font=('Helvetica', 16, 'bold')).pack(pady=(0, 20))
+
+        # 現在のステータス
+        status_frame = Frame(self.tab_license, relief='groove', borderwidth=2)
+        status_frame.pack(fill='x', pady=10, padx=20)
+
+        self.license_tier_label = Label(status_frame, text=f"現在のプラン: {self.license_manager.tier_name}",
+                                         font=('Helvetica', 12, 'bold'))
+        self.license_tier_label.pack(pady=10)
+
+        if self.license_manager.is_activated and self.license_manager.expires_at:
+            Label(status_frame, text=f"有効期限: {self.license_manager.expires_at.strftime('%Y年%m月%d日')}").pack()
+
+        # ライセンスキー入力
+        Label(self.tab_license, text="ライセンスキー:").pack(anchor='w', padx=20, pady=(20, 5))
+        self.license_key_entry = Entry(self.tab_license, width=50)
+        self.license_key_entry.pack(padx=20)
+        self.license_key_entry.insert(0, self.license_manager.license_key or '')
+
+        # ボタン
+        btn_frame = Frame(self.tab_license)
+        btn_frame.pack(pady=20)
+        Button(btn_frame, text="アクティベート", command=self.activate_license, bg='#2563EB', fg='white', padx=20).pack(side='left', padx=5)
+        Button(btn_frame, text="ライセンス解除", command=self.clear_license).pack(side='left', padx=5)
+
+        # エラーメッセージ
+        self.license_error = Label(self.tab_license, text="", fg='red')
+        self.license_error.pack()
+
+        # 購入リンク
+        Label(self.tab_license, text="").pack(pady=10)
+        Label(self.tab_license, text="Standard版 (¥29,800/年)", font=('Helvetica', 11)).pack()
+        Label(self.tab_license, text="• 解析件数無制限\n• Word/Excel出力\n• 差分比較機能\n• 商用利用OK", justify='left').pack()
 
     def browse_file(self):
-        file_path = filedialog.askopenfilename(
-            title="Forguncyプロジェクトを選択",
-            filetypes=[("Forguncy Project", "*.fgcp"), ("All files", "*.*")]
-        )
-        if file_path:
-            self.file_path.set(file_path)
+        path = filedialog.askopenfilename(title="Forguncyプロジェクトを選択", filetypes=[("Forguncy Project", "*.fgcp")])
+        if path:
+            self.file_path.set(path)
+
+    def browse_file2(self):
+        path = filedialog.askopenfilename(title="比較先プロジェクトを選択", filetypes=[("Forguncy Project", "*.fgcp")])
+        if path:
+            self.file_path2.set(path)
 
     def browse_output(self):
-        dir_path = filedialog.askdirectory(
-            title="出力フォルダを選択",
-            initialdir=self.output_dir.get()
-        )
-        if dir_path:
-            self.output_dir.set(dir_path)
+        path = filedialog.askdirectory(title="出力フォルダを選択", initialdir=self.output_dir.get())
+        if path:
+            self.output_dir.set(path)
 
     def update_progress(self, pct: int, msg: str):
         self.progress['value'] = pct
@@ -1103,46 +1250,144 @@ class ForguncyInsightApp:
             messagebox.showerror("エラー", "プロジェクトファイルを選択してください")
             return
 
-        if not os.path.exists(self.file_path.get()):
-            messagebox.showerror("エラー", "ファイルが見つかりません")
-            return
-
         self.analyze_btn.config(state='disabled')
         self.progress['value'] = 0
 
         try:
-            # 解析
             self.update_progress(10, "解析を開始しています...")
-            analysis = analyze_project(self.file_path.get(), self.update_progress)
+            analysis = analyze_project(self.file_path.get(), self.update_progress, self.license_manager.limits)
 
-            # 仕様書生成
-            self.update_progress(70, "仕様書を生成しています...")
-            output_path = generate_spec_document(analysis, self.output_dir.get())
+            generated_files = []
+
+            # Word出力
+            if self.license_manager.limits.get('word_export'):
+                self.update_progress(70, "Word仕様書を生成しています...")
+                word_path = generate_spec_document(analysis, self.output_dir.get())
+                generated_files.append(word_path)
+
+            # Excel出力
+            if self.license_manager.limits.get('excel_export') and EXCEL_AVAILABLE:
+                self.update_progress(85, "Excel仕様書を生成しています...")
+                excel_path = generate_excel_document(analysis, self.output_dir.get())
+                generated_files.append(excel_path)
 
             self.update_progress(100, "完了しました!")
 
-            messagebox.showinfo(
-                "完了",
-                f"仕様書を生成しました:\n{output_path}\n\n"
-                f"テーブル: {analysis.summary.table_count}件\n"
-                f"ページ: {analysis.summary.page_count}件\n"
-                f"ワークフロー: {analysis.summary.workflow_count}件\n"
-                f"サーバーコマンド: {analysis.summary.server_command_count}件"
-            )
+            msg = f"解析が完了しました。\n\nテーブル: {analysis.summary.table_count}件\nページ: {analysis.summary.page_count}件"
+            if generated_files:
+                msg += f"\n\n生成ファイル:\n" + "\n".join(generated_files)
+            else:
+                msg += "\n\n※ Word/Excel出力にはStandard版が必要です"
 
-            # 出力フォルダを開く
-            if os.name == 'nt':
+            messagebox.showinfo("完了", msg)
+
+            if generated_files and os.name == 'nt':
                 os.startfile(self.output_dir.get())
-            elif os.name == 'posix':
-                import subprocess
-                subprocess.run(['open', self.output_dir.get()])
 
         except Exception as e:
             messagebox.showerror("エラー", f"解析中にエラーが発生しました:\n{str(e)}")
             self.update_progress(0, "")
-
         finally:
             self.analyze_btn.config(state='normal')
+
+    def compare_files(self):
+        if not self.file_path.get() or not self.file_path2.get():
+            messagebox.showerror("エラー", "2つのファイルを選択してください")
+            return
+
+        try:
+            old_analysis = analyze_project(self.file_path.get(), limits=self.license_manager.limits)
+            new_analysis = analyze_project(self.file_path2.get(), limits=self.license_manager.limits)
+            diff = compare_projects(old_analysis, new_analysis)
+
+            # 結果表示ウィンドウ
+            diff_window = Toplevel(self.root)
+            diff_window.title("差分比較結果")
+            diff_window.geometry("600x500")
+
+            text = Text(diff_window, wrap=WORD, padx=10, pady=10)
+            scrollbar = Scrollbar(diff_window, command=text.yview)
+            text.configure(yscrollcommand=scrollbar.set)
+            scrollbar.pack(side=RIGHT, fill=Y)
+            text.pack(fill=BOTH, expand=True)
+
+            text.insert(END, f"=== 差分比較結果 ===\n\n")
+            text.insert(END, f"比較元: {old_analysis.project_name}\n")
+            text.insert(END, f"比較先: {new_analysis.project_name}\n\n")
+
+            text.insert(END, f"--- テーブル ---\n")
+            text.insert(END, f"追加: {len(diff.added_tables)}件\n")
+            for t in diff.added_tables:
+                text.insert(END, f"  + {t.name}\n")
+            text.insert(END, f"削除: {len(diff.removed_tables)}件\n")
+            for t in diff.removed_tables:
+                text.insert(END, f"  - {t.name}\n")
+            text.insert(END, f"変更: {len(diff.modified_tables)}件\n")
+            for m in diff.modified_tables:
+                text.insert(END, f"  * {m['name']}\n")
+
+            text.insert(END, f"\n--- ページ ---\n")
+            text.insert(END, f"追加: {len(diff.added_pages)}件\n")
+            for p in diff.added_pages:
+                text.insert(END, f"  + {p.name}\n")
+            text.insert(END, f"削除: {len(diff.removed_pages)}件\n")
+            for p in diff.removed_pages:
+                text.insert(END, f"  - {p.name}\n")
+
+            text.insert(END, f"\n--- サーバーコマンド ---\n")
+            text.insert(END, f"追加: {len(diff.added_server_commands)}件\n")
+            for c in diff.added_server_commands:
+                text.insert(END, f"  + {c.name}\n")
+            text.insert(END, f"削除: {len(diff.removed_server_commands)}件\n")
+            for c in diff.removed_server_commands:
+                text.insert(END, f"  - {c.name}\n")
+            text.insert(END, f"変更: {len(diff.modified_server_commands)}件\n")
+            for m in diff.modified_server_commands:
+                text.insert(END, f"  * {m['name']}\n")
+
+            text.config(state='disabled')
+
+        except Exception as e:
+            messagebox.showerror("エラー", f"比較中にエラーが発生しました:\n{str(e)}")
+
+    def activate_license(self):
+        key = self.license_key_entry.get().strip()
+        if not key:
+            self.license_error.config(text="ライセンスキーを入力してください")
+            return
+
+        result = self.license_manager.activate(key)
+        if result['is_valid']:
+            self.license_error.config(text="")
+            self.license_tier_label.config(text=f"現在のプラン: {self.license_manager.tier_name}")
+            self.license_status.config(text=f"ライセンス: {self.license_manager.tier_name}")
+            messagebox.showinfo("成功", f"ライセンスがアクティベートされました。\nプラン: {self.license_manager.tier_name}")
+            # UIを更新
+            self.refresh_ui()
+        else:
+            self.license_error.config(text=result.get('error', '不明なエラー'))
+
+    def clear_license(self):
+        if messagebox.askyesno("確認", "ライセンスを解除しますか？"):
+            self.license_manager.clear()
+            self.license_tier_label.config(text="現在のプラン: Free")
+            self.license_status.config(text="ライセンス: Free")
+            self.license_key_entry.delete(0, END)
+            self.license_error.config(text="")
+            self.refresh_ui()
+
+    def refresh_ui(self):
+        """ライセンス状態に応じてUIを更新"""
+        # 出力チェックボックスの状態を更新
+        if self.license_manager.limits.get('word_export'):
+            self.output_word.state(['!disabled', 'selected'])
+        else:
+            self.output_word.state(['disabled', '!selected'])
+
+        if self.license_manager.limits.get('excel_export'):
+            self.output_excel.state(['!disabled', 'selected'])
+        else:
+            self.output_excel.state(['disabled', '!selected'])
 
 
 def main():
