@@ -5,6 +5,14 @@ Forguncy Insight - Forguncyプロジェクト解析・仕様書自動生成ツ�
 Python版 - 完全版（ライセンス管理・Excel出力・差分比較対応）
 """
 
+# =============================================================================
+# バージョン情報
+# =============================================================================
+APP_VERSION = "1.0.0"
+SUPPORTED_FORGUNCY_VERSIONS = ["9.x"]  # 対応Forguncyバージョン
+FORGUNCY_VERSION_TESTED = "9.0"  # テスト済みバージョン
+VERSION_INFO = f"v{APP_VERSION} (Forguncy {', '.join(SUPPORTED_FORGUNCY_VERSIONS)} 対応)"
+
 import hashlib
 import json
 import os
@@ -808,7 +816,7 @@ def generate_spec_document(analysis: AnalysisResult, output_dir: str) -> str:
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     doc.add_paragraph('システム仕様書').alignment = WD_ALIGN_PARAGRAPH.CENTER
     doc.add_paragraph(f'生成日: {datetime.now().strftime("%Y年%m月%d日")}').alignment = WD_ALIGN_PARAGRAPH.CENTER
-    gen_para = doc.add_paragraph('Forguncy Insight により自動生成')
+    gen_para = doc.add_paragraph(f'Forguncy Insight {VERSION_INFO} により自動生成')
     gen_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     gen_para.runs[0].italic = True
 
@@ -828,7 +836,7 @@ def generate_spec_document(analysis: AnalysisResult, output_dir: str) -> str:
 
     # 1. システム概要
     doc.add_heading('1. システム概要', 1)
-    summary_table = doc.add_table(rows=7, cols=2)
+    summary_table = doc.add_table(rows=8, cols=2)
     summary_table.style = 'Table Grid'
     for i, (label, value) in enumerate([
         ('プロジェクト名', analysis.project_name),
@@ -838,6 +846,7 @@ def generate_spec_document(analysis: AnalysisResult, output_dir: str) -> str:
         ('サーバーコマンド数', f'{analysis.summary.server_command_count}件'),
         ('総カラム数', f'{analysis.summary.total_columns}件'),
         ('リレーション数', f'{analysis.summary.total_relations}件'),
+        ('対応Forguncyバージョン', ', '.join(SUPPORTED_FORGUNCY_VERSIONS)),
     ]):
         summary_table.rows[i].cells[0].text = label
         summary_table.rows[i].cells[1].text = value
@@ -957,6 +966,7 @@ def generate_excel_document(analysis: AnalysisResult, output_dir: str) -> str:
         ['総カラム数', analysis.summary.total_columns],
         ['リレーション数', analysis.summary.total_relations],
         ['生成日', datetime.now().strftime('%Y-%m-%d %H:%M')],
+        ['生成ツール', f'Forguncy Insight {VERSION_INFO}'],
     ]
     for row_idx, row in enumerate(summary_data, 1):
         for col_idx, value in enumerate(row, 1):
@@ -1076,7 +1086,7 @@ def generate_er_mermaid(tables: list) -> str:
 class ForguncyInsightApp:
     def __init__(self, root: Tk):
         self.root = root
-        self.root.title("Forguncy Insight")
+        self.root.title(f"Forguncy Insight {VERSION_INFO}")
         self.root.geometry("700x550")
         self.root.resizable(True, True)
 
@@ -1110,7 +1120,8 @@ class ForguncyInsightApp:
     def setup_analyze_tab(self):
         # タイトル
         Label(self.tab_analyze, text="Forguncy Insight", font=('Helvetica', 18, 'bold')).pack(pady=(0, 5))
-        Label(self.tab_analyze, text="Forguncyプロジェクト解析・仕様書自動生成", font=('Helvetica', 10)).pack(pady=(0, 10))
+        Label(self.tab_analyze, text="Forguncyプロジェクト解析・仕様書自動生成", font=('Helvetica', 10)).pack(pady=(0, 3))
+        Label(self.tab_analyze, text=VERSION_INFO, font=('Helvetica', 9), fg='gray').pack(pady=(0, 10))
 
         # ライセンス状態
         self.license_status = Label(self.tab_analyze, text=f"ライセンス: {self.license_manager.tier_name}", fg='blue')
