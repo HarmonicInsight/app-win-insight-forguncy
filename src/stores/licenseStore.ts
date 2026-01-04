@@ -6,7 +6,7 @@ import {
   getFeatureLimits,
   FeatureLimits,
   ProductCode,
-} from '@insight/license';
+} from '../lib/license';
 
 interface LicenseState {
   licenseKey: string | null;

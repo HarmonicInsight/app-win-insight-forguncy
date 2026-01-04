@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLicenseStore } from '../stores/licenseStore';
-import { TIER_NAMES } from '@insight/license';
+import { TIER_NAMES } from '../lib/license';
 import { useI18n } from '../contexts/I18nContext';
 
 export function LicenseActivation() {

@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { useLicenseStore } from '../stores/licenseStore';
-import { FeatureLimits } from '@insight/license';
+import { FeatureLimits } from '../lib/license';
 
 interface FeatureGateProps {
   feature: keyof FeatureLimits;
