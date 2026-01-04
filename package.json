@@ -1,6 +1,6 @@
 {
-  "name": "forguncy-analyzer",
-  "productName": "Forguncy Analyzer",
+  "name": "forguncy-insight",
+  "productName": "Forguncy Insight",
   "version": "1.0.0",
   "description": "Forguncyプロジェクトファイル(.fgcp)を解析し、仕様書を自動生成するツール",
   "main": "dist/electron/main.js",
@@ -41,8 +41,8 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.harmonicinsight.forguncy-analyzer",
-    "productName": "Forguncy Analyzer",
+    "appId": "com.harmonicinsight.forguncy-insight",
+    "productName": "Forguncy Insight",
     "directories": {
       "output": "release"
     },

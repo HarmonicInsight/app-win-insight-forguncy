@@ -6,7 +6,7 @@ import OutputActions from './components/OutputActions';
 import ProjectViewer from './components/ProjectViewer';
 import LanguageSelector from './components/LanguageSelector';
 import { useAnalysis } from './hooks/useAnalysis';
-import { useI18n } from './hooks/useI18n';
+import { useI18n } from './contexts/I18nContext';
 
 export interface AnalysisOptionsState {
   generateSpec: boolean;
@@ -229,7 +229,7 @@ function App() {
       <footer className="border-t border-border bg-surface-primary">
         <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
           <p className="text-xs text-content-muted">
-            Forguncy Analyzer v1.0.0
+            Forguncy Insight v1.0.0
           </p>
           <p className="text-xs text-content-muted">
             {t('app.footer')}

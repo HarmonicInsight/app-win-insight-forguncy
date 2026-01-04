@@ -34,7 +34,7 @@ export interface TierConfig {
 
 export const PRODUCT_CONFIG: ProductConfig = {
   code: 'FGCY',
-  name: 'Forguncy Analyzer Pro',
+  name: 'Forguncy Insight',
   version: '1.0.0',
   description: 'Forguncyプロジェクト解析・仕様書自動生成ツール',
   features: {

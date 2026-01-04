@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLicense } from '../hooks/useLicense';
-import { useI18n } from '../hooks/useI18n';
+import { useI18n } from '../contexts/I18nContext';
 
 interface Props {
   isOpen: boolean;

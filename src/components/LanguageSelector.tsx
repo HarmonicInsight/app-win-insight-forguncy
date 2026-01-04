@@ -1,4 +1,4 @@
-import { useI18n } from '../hooks/useI18n';
+import { useI18n } from '../contexts/I18nContext';
 import { Locale } from '../common/i18n';
 
 export default function LanguageSelector() {
