@@ -1471,18 +1471,31 @@ class ForguncyInsightApp:
         Label(self.tab_analyze, text="Forguncyプロジェクト解析・仕様書自動生成",
               font=FONTS["heading"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w', pady=(0, 20))
 
-        # ファイル選択
-        file_frame = Frame(self.tab_analyze, bg=COLORS["surface"])
-        file_frame.pack(fill='x', pady=10)
-        Label(file_frame, text="プロジェクトファイル (.fgcp):",
-              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w')
-        file_input = Frame(file_frame, bg=COLORS["surface"])
-        file_input.pack(fill='x', pady=5)
-        Entry(file_input, textvariable=self.file_path, state='readonly',
-              font=FONTS["body"], relief='solid', bd=1).pack(side='left', fill='x', expand=True, ipady=4)
-        Button(file_input, text="参照...", command=self.browse_file,
-               font=FONTS["body"], bg=COLORS["primary"], fg='white',
-               relief='flat', padx=15, cursor='hand2').pack(side='right', padx=(10, 0))
+        # ドラッグ＆ドロップエリア
+        self.drop_frame = Frame(self.tab_analyze, bg=COLORS["border"], padx=2, pady=2)
+        self.drop_frame.pack(fill='x', pady=10)
+
+        self.drop_area = Frame(self.drop_frame, bg="#F1F5F9", height=100)
+        self.drop_area.pack(fill='both', expand=True)
+        self.drop_area.pack_propagate(False)
+
+        self.drop_label = Label(self.drop_area, text="📂 ここにファイルをドロップ\nまたはクリックして選択 (.fgcp)",
+                                 font=FONTS["body"], bg="#F1F5F9", fg=COLORS["text_secondary"],
+                                 cursor='hand2')
+        self.drop_label.pack(expand=True)
+
+        # ファイルパス表示
+        self.file_label = Label(self.tab_analyze, textvariable=self.file_path,
+                                 font=FONTS["small"], bg=COLORS["surface"], fg=COLORS["primary"],
+                                 wraplength=600)
+        self.file_label.pack(anchor='w', pady=(5, 0))
+
+        # クリックイベント
+        self.drop_area.bind('<Button-1>', lambda e: self.browse_file())
+        self.drop_label.bind('<Button-1>', lambda e: self.browse_file())
+
+        # ドラッグ＆ドロップ対応（tkinterdnd2があれば）
+        self._setup_dnd()
 
         # 出力フォルダ
         output_frame = Frame(self.tab_analyze, bg=COLORS["surface"])
@@ -1546,27 +1559,43 @@ class ForguncyInsightApp:
                    relief='flat', padx=20, cursor='hand2').pack()
             return
 
-        # ファイル1
+        # ファイル1（比較元）ドロップエリア
         Label(self.tab_diff, text="比較元ファイル (旧バージョン):",
               font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w')
-        file1_frame = Frame(self.tab_diff, bg=COLORS["surface"])
-        file1_frame.pack(fill='x', pady=5)
-        Entry(file1_frame, textvariable=self.file_path,
-              font=FONTS["body"], relief='solid', bd=1).pack(side='left', fill='x', expand=True, ipady=4)
-        Button(file1_frame, text="参照...", command=self.browse_file,
-               font=FONTS["body"], bg=COLORS["bg"], fg=COLORS["text"],
-               relief='flat', padx=15, cursor='hand2').pack(side='right', padx=(10, 0))
 
-        # ファイル2
+        drop1_outer = Frame(self.tab_diff, bg=COLORS["border"], padx=2, pady=2)
+        drop1_outer.pack(fill='x', pady=5)
+
+        self.drop_area1 = Frame(drop1_outer, bg="#F1F5F9", height=70)
+        self.drop_area1.pack(fill='both', expand=True)
+        self.drop_area1.pack_propagate(False)
+
+        self.drop_label1 = Label(self.drop_area1, text="📂 ファイルをドロップまたはクリック (.fgcp)",
+                                  font=FONTS["body"], bg="#F1F5F9", fg=COLORS["text_secondary"],
+                                  cursor='hand2')
+        self.drop_label1.pack(expand=True)
+
+        self.drop_area1.bind('<Button-1>', lambda e: self._browse_diff_file(1))
+        self.drop_label1.bind('<Button-1>', lambda e: self._browse_diff_file(1))
+
+        # ファイル2（比較先）ドロップエリア
         Label(self.tab_diff, text="比較先ファイル (新バージョン):",
               font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w', pady=(15, 0))
-        file2_frame = Frame(self.tab_diff, bg=COLORS["surface"])
-        file2_frame.pack(fill='x', pady=5)
-        Entry(file2_frame, textvariable=self.file_path2,
-              font=FONTS["body"], relief='solid', bd=1).pack(side='left', fill='x', expand=True, ipady=4)
-        Button(file2_frame, text="参照...", command=self.browse_file2,
-               font=FONTS["body"], bg=COLORS["bg"], fg=COLORS["text"],
-               relief='flat', padx=15, cursor='hand2').pack(side='right', padx=(10, 0))
+
+        drop2_outer = Frame(self.tab_diff, bg=COLORS["border"], padx=2, pady=2)
+        drop2_outer.pack(fill='x', pady=5)
+
+        self.drop_area2 = Frame(drop2_outer, bg="#F1F5F9", height=70)
+        self.drop_area2.pack(fill='both', expand=True)
+        self.drop_area2.pack_propagate(False)
+
+        self.drop_label2 = Label(self.drop_area2, text="📂 ファイルをドロップまたはクリック (.fgcp)",
+                                  font=FONTS["body"], bg="#F1F5F9", fg=COLORS["text_secondary"],
+                                  cursor='hand2')
+        self.drop_label2.pack(expand=True)
+
+        self.drop_area2.bind('<Button-1>', lambda e: self._browse_diff_file(2))
+        self.drop_label2.bind('<Button-1>', lambda e: self._browse_diff_file(2))
 
         # 比較ボタン
         Button(self.tab_diff, text="差分を比較", command=self.compare_files,
@@ -1574,10 +1603,83 @@ class ForguncyInsightApp:
                padx=40, pady=12, relief='flat', cursor='hand2').pack(pady=30)
 
 
+    def _browse_diff_file(self, file_num):
+        """差分比較用ファイル選択"""
+        path = filedialog.askopenfilename(title="Forguncyプロジェクトを選択", filetypes=[("Forguncy Project", "*.fgcp")])
+        if path:
+            if file_num == 1:
+                self.file_path.set(path)
+                self._update_diff_drop_area(1)
+            else:
+                self.file_path2.set(path)
+                self._update_diff_drop_area(2)
+
+    def _update_diff_drop_area(self, file_num):
+        """差分用ドロップエリア表示更新"""
+        if file_num == 1:
+            path = self.file_path.get()
+            label = self.drop_label1
+            area = self.drop_area1
+        else:
+            path = self.file_path2.get()
+            label = self.drop_label2
+            area = self.drop_area2
+
+        if path:
+            filename = Path(path).name
+            label.configure(text=f"✓ {filename}", bg="#ECFDF5", fg=COLORS["success"])
+            area.configure(bg="#ECFDF5")
+
+    def _setup_dnd(self):
+        """ドラッグ＆ドロップを設定（tkinterdnd2が利用可能な場合）"""
+        if not DND_AVAILABLE:
+            return
+        try:
+            self.drop_area.drop_target_register(DND_FILES)
+            self.drop_area.dnd_bind('<<Drop>>', self._on_drop)
+            self.drop_area.dnd_bind('<<DragEnter>>', self._on_drag_enter)
+            self.drop_area.dnd_bind('<<DragLeave>>', self._on_drag_leave)
+        except Exception:
+            pass
+
+    def _on_drop(self, event):
+        """ファイルドロップ時の処理"""
+        path = event.data
+        # Windowsでは{}で囲まれている場合がある
+        if path.startswith('{') and path.endswith('}'):
+            path = path[1:-1]
+        if path.lower().endswith('.fgcp'):
+            self.file_path.set(path)
+            self._update_drop_area()
+        self._on_drag_leave(None)
+
+    def _on_drag_enter(self, event):
+        """ドラッグ中の表示"""
+        self.drop_area.configure(bg="#DBEAFE")
+        self.drop_label.configure(bg="#DBEAFE", fg=COLORS["primary"])
+
+    def _on_drag_leave(self, event):
+        """ドラッグ離脱時の表示"""
+        if self.file_path.get():
+            self.drop_area.configure(bg="#ECFDF5")
+            self.drop_label.configure(bg="#ECFDF5", fg=COLORS["success"])
+        else:
+            self.drop_area.configure(bg="#F1F5F9")
+            self.drop_label.configure(bg="#F1F5F9", fg=COLORS["text_secondary"])
+
+    def _update_drop_area(self):
+        """ファイル選択後のドロップエリア表示更新"""
+        if self.file_path.get():
+            filename = Path(self.file_path.get()).name
+            self.drop_label.configure(text=f"✓ {filename}\n（クリックで変更）",
+                                       bg="#ECFDF5", fg=COLORS["success"])
+            self.drop_area.configure(bg="#ECFDF5")
+
     def browse_file(self):
         path = filedialog.askopenfilename(title="Forguncyプロジェクトを選択", filetypes=[("Forguncy Project", "*.fgcp")])
         if path:
             self.file_path.set(path)
+            self._update_drop_area()
 
     def browse_file2(self):
         path = filedialog.askopenfilename(title="比較先プロジェクトを選択", filetypes=[("Forguncy Project", "*.fgcp")])
