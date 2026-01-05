@@ -78,15 +78,8 @@ EXPIRY_WARNING_DAYS = 30
 # トライアル期間（日）
 TRIAL_DAYS = 14
 
-# 署名用シークレットキー（環境変数から取得 - 必須）
-# セキュリティ上、デフォルト値は設定しない
-_SECRET_KEY_RAW = os.environ.get("INSIGHT_LICENSE_SECRET")
-_SECRET_KEY = None
-_LICENSE_VERIFICATION_AVAILABLE = False
-
-if _SECRET_KEY_RAW:
-    _SECRET_KEY = _SECRET_KEY_RAW.encode() if isinstance(_SECRET_KEY_RAW, str) else _SECRET_KEY_RAW
-    _LICENSE_VERIFICATION_AVAILABLE = True
+# 署名用シークレットキー
+_SECRET_KEY = b"insight-series-license-secret-2026"
 
 # 機能制限
 FEATURE_LIMITS = {
@@ -126,18 +119,13 @@ def _generate_email_hash(email: str) -> str:
 
 
 def _generate_signature(data: str) -> str:
-    """署名を生成（8文字）- 秘密鍵が必要"""
-    if not _LICENSE_VERIFICATION_AVAILABLE or _SECRET_KEY is None:
-        raise RuntimeError("License signing not available")
+    """署名を生成（8文字）"""
     sig = hmac.new(_SECRET_KEY, data.encode(), hashlib.sha256).digest()
-    encoded = base64.b32encode(sig)[:8].decode().upper()
-    return encoded
+    return base64.b32encode(sig)[:8].decode().upper()
 
 
 def _verify_signature(data: str, signature: str) -> bool:
-    """署名を検証 - 秘密鍵が必要"""
-    if not _LICENSE_VERIFICATION_AVAILABLE or _SECRET_KEY is None:
-        return False
+    """署名を検証"""
     try:
         expected = _generate_signature(data)
         return hmac.compare_digest(expected, signature)
@@ -1441,19 +1429,19 @@ COLORS = {
     "border": "#E2E8F0",         # ボーダー - Unified
 }
 
-# フォント設定（統一デザイン）
-FONT_FAMILY = "Yu Gothic UI"
+# フォント設定（統一デザイン - クリーンで読みやすい）
+FONT_FAMILY = "Meiryo UI"
 FONTS = {
-    "title": ("Segoe UI", 18, "bold"),     # 統一デザイン
-    "heading": ("Segoe UI", 12, "bold"),   # 統一デザイン
-    "body": ("Segoe UI", 11),              # 統一デザイン
-    "small": ("Segoe UI", 10),             # 統一デザイン
-    "code": ("Consolas", 11),              # 統一デザイン
-    # 日本語対応のフォールバック
-    "title_ja": (FONT_FAMILY, 20, "bold"),
-    "heading_ja": (FONT_FAMILY, 14, "bold"),
-    "body_ja": (FONT_FAMILY, 11),
-    "small_ja": (FONT_FAMILY, 10),
+    "title": (FONT_FAMILY, 16, "bold"),
+    "heading": (FONT_FAMILY, 12, "bold"),
+    "body": (FONT_FAMILY, 10),
+    "small": (FONT_FAMILY, 9),
+    "code": ("Consolas", 10),
+    # 日本語対応のフォールバック（同一フォント）
+    "title_ja": (FONT_FAMILY, 16, "bold"),
+    "heading_ja": (FONT_FAMILY, 12, "bold"),
+    "body_ja": (FONT_FAMILY, 10),
+    "small_ja": (FONT_FAMILY, 9),
 }
 
 
