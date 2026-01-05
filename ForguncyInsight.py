@@ -1415,28 +1415,36 @@ def generate_er_mermaid(tables: list) -> str:
 # GUI - モダンUI設定
 # =============================================================================
 
-# カラーパレット
+# カラーパレット（統一デザイン）
 COLORS = {
-    "primary": "#3B82F6",        # ブルー
+    "primary": "#3B82F6",        # ブルー - Unified
     "primary_hover": "#2563EB",  # ダークブルー
-    "success": "#10B981",        # グリーン
+    "success": "#10B981",        # グリーン - Unified
     "warning": "#F59E0B",        # オレンジ
-    "danger": "#EF4444",         # レッド
-    "bg": "#F8FAFC",             # 背景
-    "surface": "#FFFFFF",        # カード背景
-    "text": "#1E293B",           # メインテキスト
-    "text_secondary": "#64748B", # サブテキスト
-    "text_muted": "#94A3B8",     # ミュートテキスト
-    "border": "#E2E8F0",         # ボーダー
+    "danger": "#EF4444",         # レッド - Unified
+    "error": "#EF4444",          # エラー（danger の alias）
+    "bg": "#F8FAFC",             # 背景 - Unified
+    "background": "#F8FAFC",     # 背景（bg の alias）
+    "surface": "#FFFFFF",        # カード背景 - Unified
+    "text": "#1E293B",           # メインテキスト - Unified
+    "text_secondary": "#64748B", # サブテキスト - Unified
+    "text_muted": "#94A3B8",     # ミュートテキスト - Unified
+    "border": "#E2E8F0",         # ボーダー - Unified
 }
 
-# フォント設定
+# フォント設定（統一デザイン）
 FONT_FAMILY = "Yu Gothic UI"
 FONTS = {
-    "title": (FONT_FAMILY, 20, "bold"),
-    "heading": (FONT_FAMILY, 14, "bold"),
-    "body": (FONT_FAMILY, 11),
-    "small": (FONT_FAMILY, 10),
+    "title": ("Segoe UI", 18, "bold"),     # 統一デザイン
+    "heading": ("Segoe UI", 12, "bold"),   # 統一デザイン
+    "body": ("Segoe UI", 11),              # 統一デザイン
+    "small": ("Segoe UI", 10),             # 統一デザイン
+    "code": ("Consolas", 11),              # 統一デザイン
+    # 日本語対応のフォールバック
+    "title_ja": (FONT_FAMILY, 20, "bold"),
+    "heading_ja": (FONT_FAMILY, 14, "bold"),
+    "body_ja": (FONT_FAMILY, 11),
+    "small_ja": (FONT_FAMILY, 10),
 }
 
 
@@ -1449,18 +1457,18 @@ class LicenseActivationDialog:
         self.result = False
 
         self.dialog = Toplevel(parent)
-        self.dialog.title("ライセンス管理")
-        self.dialog.geometry("500x580")
+        self.dialog.title(PRODUCT_NAME)
+        self.dialog.geometry("550x580")
         self.dialog.resizable(False, False)
         self.dialog.transient(parent)
         self.dialog.grab_set()
-        self.dialog.configure(bg=COLORS["bg"])
+        self.dialog.configure(bg=COLORS["background"])
 
         # ダイアログを中央に配置
         self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() - 500) // 2
+        x = (self.dialog.winfo_screenwidth() - 550) // 2
         y = (self.dialog.winfo_screenheight() - 580) // 2
-        self.dialog.geometry(f"500x580+{x}+{y}")
+        self.dialog.geometry(f"550x580+{x}+{y}")
 
         # アクティベート状態に応じてUIを切り替え
         if self.license_manager.is_activated:
@@ -1472,77 +1480,72 @@ class LicenseActivationDialog:
         self.dialog.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def setup_status_ui(self):
-        """アクティベート済みの場合：ステータス表示UI"""
+        """アクティベート済みの場合：ステータス表示UI（統一デザイン）"""
         card = Frame(self.dialog, bg=COLORS["surface"], padx=40, pady=30)
         card.pack(fill='both', expand=True, padx=20, pady=20)
 
         # タイトル
         Label(card, text=PRODUCT_NAME, font=FONTS["title"],
-              bg=COLORS["surface"], fg=COLORS["primary"]).pack(pady=(0, 5))
-        Label(card, text="ライセンス情報", font=FONTS["heading"],
-              bg=COLORS["surface"], fg=COLORS["text_secondary"]).pack(pady=(0, 25))
+              bg=COLORS["surface"], fg=COLORS["text"]).pack(pady=(0, 20))
 
-        # ステータスカード
-        status_frame = Frame(card, bg="#ECFDF5", padx=20, pady=15)
-        status_frame.pack(fill='x', pady=10)
+        # 現在のステータスセクション
+        status_frame = Frame(card, bg="#F8FAFC", padx=20, pady=15)
+        status_frame.pack(fill='x', pady=(0, 20))
 
+        # ステータスラベル
         Label(status_frame, text="✓ ライセンス有効", font=FONTS["heading"],
-              bg="#ECFDF5", fg=COLORS["success"]).pack(anchor='w')
+              bg="#F8FAFC", fg=COLORS["primary"]).pack(anchor='w', pady=(0, 5))
 
         # ライセンス詳細
-        info_frame = Frame(card, bg=COLORS["bg"], padx=20, pady=15)
-        info_frame.pack(fill='x', pady=10)
+        details_text = f"{self.license_manager.tier_name}"
+        if self.license_manager.expires_at:
+            expiry_str = self.license_manager.expires_at.strftime('%Y年%m月%d日')
+            details_text += f" - 有効期限: {expiry_str}"
+            days = self.license_manager.days_until_expiry
+            if days is not None and days <= 30:
+                details_text += f" ({days}日)"
 
-        details = [
-            ("プラン", self.license_manager.tier_name),
-            ("メールアドレス", self.license_manager.email or "-"),
-            ("有効期限", self.license_manager.expires_at.strftime('%Y年%m月%d日') if self.license_manager.expires_at else "-"),
-        ]
-
-        # 残り日数
-        days = self.license_manager.days_until_expiry
-        if days is not None:
-            if days <= 30:
-                details.append(("残り日数", f"{days}日 ⚠️"))
-            else:
-                details.append(("残り日数", f"{days}日"))
-
-        for label_text, value in details:
-            row = Frame(info_frame, bg=COLORS["bg"])
-            row.pack(fill='x', pady=3)
-            Label(row, text=f"{label_text}:", font=FONTS["body"],
-                  bg=COLORS["bg"], fg=COLORS["text_secondary"], width=15, anchor='w').pack(side='left')
-            Label(row, text=value, font=FONTS["body"],
-                  bg=COLORS["bg"], fg=COLORS["text"]).pack(side='left')
-
-        # ライセンスキー（マスク表示）
-        if self.license_manager.license_key:
-            key = self.license_manager.license_key
-            masked_key = key[:9] + "****-****-****"
-            row = Frame(info_frame, bg=COLORS["bg"])
-            row.pack(fill='x', pady=3)
-            Label(row, text="ライセンスキー:", font=FONTS["body"],
-                  bg=COLORS["bg"], fg=COLORS["text_secondary"], width=15, anchor='w').pack(side='left')
-            Label(row, text=masked_key, font=FONTS["small"],
-                  bg=COLORS["bg"], fg=COLORS["text_muted"]).pack(side='left')
+        Label(status_frame, text=details_text, font=FONTS["body"],
+              bg="#F8FAFC", fg=COLORS["text_secondary"]).pack(anchor='w')
 
         # 期限警告
         if self.license_manager.is_expiring_soon:
             warning_frame = Frame(card, bg="#FEF3C7", padx=15, pady=10)
-            warning_frame.pack(fill='x', pady=10)
-            Label(warning_frame, text=f"⚠️ {self.license_manager.expiry_warning_message}",
-                  font=FONTS["small"], bg="#FEF3C7", fg="#92400E", wraplength=380).pack()
+            warning_frame.pack(fill='x', pady=(0, 20))
+            Label(warning_frame, text=f"⚠ {self.license_manager.expiry_warning_message}",
+                  font=FONTS["small"], bg="#FEF3C7", fg="#92400E", wraplength=450).pack()
 
-        # ボタンフレーム
+        # ライセンス入力フォーム（再認証用）
+        form_label = Label(card, text="License Activation", font=FONTS["heading"],
+                          bg=COLORS["surface"], fg=COLORS["text"])
+        form_label.pack(anchor='w', pady=(0, 15))
+
+        # メールアドレス
+        Label(card, text="メールアドレス:", anchor='w',
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x', pady=(0, 5))
+        email_entry = Entry(card, width=50, font=FONTS["body"], relief='solid', bd=1)
+        if self.license_manager.email:
+            email_entry.insert(0, self.license_manager.email)
+        email_entry.pack(fill='x', pady=(0, 15), ipady=5)
+        email_entry.config(state='readonly')
+
+        # ライセンスキー（マスク表示）
+        Label(card, text="ライセンスキー:", anchor='w',
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x', pady=(0, 5))
+        key_display = Entry(card, width=50, font=FONTS["code"], relief='solid', bd=1)
+        if self.license_manager.license_key:
+            masked_key = self.license_manager.license_key[:9] + "****-****-****"
+            key_display.insert(0, masked_key)
+        key_display.pack(fill='x', pady=(0, 5), ipady=5)
+        key_display.config(state='readonly')
+
+        # ボタンフレーム（統一デザイン）
         btn_frame = Frame(card, bg=COLORS["surface"])
         btn_frame.pack(pady=20)
 
         Button(btn_frame, text="閉じる", command=self.on_close,
                bg=COLORS["primary"], fg='white', font=FONTS["body"],
-               padx=25, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=5)
-        Button(btn_frame, text="ライセンス解除", command=self.on_deactivate,
-               bg=COLORS["bg"], fg=COLORS["danger"], font=FONTS["body"],
-               padx=15, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=5)
+               padx=25, pady=8, relief='flat', cursor='hand2').pack(side='right')
 
         # 更新リンク
         if self.license_manager.is_expiring_soon:
@@ -1552,68 +1555,60 @@ class LicenseActivationDialog:
             renew_link.bind('<Button-1>', lambda e: webbrowser.open(PURCHASE_URL))
 
     def setup_activate_ui(self):
-        """未アクティベートの場合：認証UI"""
+        """未アクティベートの場合：認証UI（統一デザイン）"""
         card = Frame(self.dialog, bg=COLORS["surface"], padx=40, pady=30)
         card.pack(fill='both', expand=True, padx=20, pady=20)
 
         # タイトル
         Label(card, text=PRODUCT_NAME, font=FONTS["title"],
-              bg=COLORS["surface"], fg=COLORS["primary"]).pack(pady=(0, 5))
-        Label(card, text="ライセンス認証", font=FONTS["heading"],
-              bg=COLORS["surface"], fg=COLORS["text_secondary"]).pack(pady=(0, 25))
+              bg=COLORS["surface"], fg=COLORS["text"]).pack(pady=(0, 20))
 
-        # 説明
-        desc_text = "製品をご利用いただくには、ライセンスキーの認証が必要です。"
-        Label(card, text=desc_text, wraplength=400, justify='left',
-              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w', pady=(0, 20))
+        # 現在のステータスセクション
+        status_frame = Frame(card, bg="#F8FAFC", padx=15, pady=15)
+        status_frame.pack(fill='x', pady=(0, 20))
+
+        Label(status_frame, text="○ Free版", font=FONTS["heading"],
+              bg="#F8FAFC", fg=COLORS["text_muted"]).pack(anchor='w')
+        Label(status_frame, text="ライセンス未認証",
+              font=FONTS["body"], bg="#F8FAFC", fg=COLORS["text_secondary"]).pack(anchor='w', pady=(5, 0))
+
+        # ライセンス入力フォーム
+        form_label = Label(card, text="License Activation", font=FONTS["heading"],
+                          bg=COLORS["surface"], fg=COLORS["text"])
+        form_label.pack(anchor='w', pady=(0, 15))
 
         # メールアドレス
         Label(card, text="メールアドレス:", anchor='w',
-              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x')
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x', pady=(0, 5))
         self.email_entry = Entry(card, width=50, font=FONTS["body"], relief='solid', bd=1)
-        self.email_entry.pack(fill='x', pady=(5, 15), ipady=5)
+        self.email_entry.pack(fill='x', pady=(0, 15), ipady=5)
 
         # ライセンスキー
         Label(card, text="ライセンスキー:", anchor='w',
-              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x')
-        self.key_entry = Entry(card, width=50, font=FONTS["body"], relief='solid', bd=1)
-        self.key_entry.pack(fill='x', pady=(5, 8), ipady=5)
-        Label(card, text="例: FGIN-STD-2601-XXXX-XXXX-XXXX",
-              fg=COLORS["text_muted"], font=FONTS["small"], bg=COLORS["surface"]).pack(anchor='w')
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x', pady=(0, 5))
+        Label(card, text="Format: FGIN-STD-YYMM-XXXX-XXXX-XXXX",
+              fg=COLORS["text_muted"], font=FONTS["small"], bg=COLORS["surface"]).pack(anchor='w', pady=(0, 5))
+        self.key_entry = Entry(card, width=50, font=FONTS["code"], relief='solid', bd=1)
+        self.key_entry.pack(fill='x', pady=(0, 5), ipady=5)
 
         # エラーメッセージ
-        self.error_label = Label(card, text="", fg=COLORS["danger"], wraplength=400,
+        self.error_label = Label(card, text="", fg=COLORS["error"], wraplength=450,
                                   font=FONTS["small"], bg=COLORS["surface"])
-        self.error_label.pack(pady=10)
+        self.error_label.pack(pady=15)
 
-        # ボタンフレーム
+        # ボタンフレーム（統一デザイン: Activate / Close）
         btn_frame = Frame(card, bg=COLORS["surface"])
         btn_frame.pack(pady=15)
 
         Button(btn_frame, text="認証", command=self.on_activate,
                bg=COLORS["primary"], fg='white', font=FONTS["body"],
-               padx=25, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=5)
-        Button(btn_frame, text="Free版で続行", command=self.on_continue_free,
+               padx=25, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=(0, 10))
+        Button(btn_frame, text="閉じる", command=self.on_continue_free,
                bg=COLORS["bg"], fg=COLORS["text"], font=FONTS["body"],
-               padx=15, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=5)
+               padx=20, pady=8, relief='flat', cursor='hand2').pack(side='right')
 
-        # リンクフレーム
-        link_frame = Frame(card, bg=COLORS["surface"])
-        link_frame.pack(pady=10)
-
-        trial_link = Label(link_frame, text="トライアル申請", fg=COLORS["primary"],
-                           cursor='hand2', font=FONTS["small"], bg=COLORS["surface"])
-        trial_link.pack(side='left', padx=10)
-        trial_link.bind('<Button-1>', lambda e: webbrowser.open(TRIAL_URL))
-
-        purchase_link = Label(link_frame, text="ライセンス購入", fg=COLORS["primary"],
-                               cursor='hand2', font=FONTS["small"], bg=COLORS["surface"])
-        purchase_link.pack(side='left', padx=10)
-        purchase_link.bind('<Button-1>', lambda e: webbrowser.open(PURCHASE_URL))
-
-        # 価格表示
-        Label(card, text=f"Standard版: {PRICE_STANDARD}",
-              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text_secondary"]).pack(pady=5)
+        # フォーカス設定
+        self.email_entry.focus_set()
 
     def on_activate(self):
         email = self.email_entry.get().strip()
