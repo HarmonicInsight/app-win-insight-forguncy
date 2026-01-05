@@ -1271,15 +1271,18 @@ class ForguncyInsightApp:
     def check_license_on_startup(self):
         """起動時にライセンスをチェックし、未認証なら認証ダイアログを表示"""
         if not self.license_manager.is_activated:
-            # ウィンドウを非表示にして認証ダイアログを表示
+            # ウィンドウを更新してから非表示に
+            self.root.update_idletasks()
             self.root.withdraw()
-            dialog = LicenseActivationDialog(self.root, self.license_manager)
-            if dialog.show():
-                self.root.deiconify()
-            else:
-                # ダイアログがキャンセルされた場合はアプリ終了
-                self.root.destroy()
-                return
+            self.root.after(100, self._show_license_dialog)
+
+    def _show_license_dialog(self):
+        """ライセンスダイアログを表示"""
+        dialog = LicenseActivationDialog(self.root, self.license_manager)
+        if dialog.show():
+            self.root.deiconify()
+        else:
+            self.root.destroy()
 
     def show_expiry_warning(self):
         """期限警告を表示"""
