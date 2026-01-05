@@ -8,21 +8,16 @@ Python版 - 完全版（ライセンス管理・Excel出力・差分比較対応
 # =============================================================================
 # バージョン情報
 # =============================================================================
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.0.0"
 SUPPORTED_FORGUNCY_VERSIONS = ["9.x"]  # 対応Forguncyバージョン
 FORGUNCY_VERSION_TESTED = "9.0"  # テスト済みバージョン
 VERSION_INFO = f"v{APP_VERSION} (Forguncy {', '.join(SUPPORTED_FORGUNCY_VERSIONS)} 対応)"
 
 import hashlib
 import json
-import logging
 import os
-import queue
 import re
-import threading
-import traceback
 import zipfile
-import zlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -30,151 +25,6 @@ from tkinter import Tk, Frame, Label, Button, Entry, StringVar, filedialog, mess
 from tkinter import LEFT, RIGHT, BOTH, END, X, Y, W, E, N, S, VERTICAL, HORIZONTAL, WORD
 from typing import Any, Optional, Dict, List, Tuple
 import webbrowser
-
-
-# =============================================================================
-# ログ設定
-# =============================================================================
-def get_log_dir() -> Path:
-    """ログディレクトリを取得（Windows: %APPDATA%/ForguncyInsight/logs）"""
-    if os.name == 'nt':
-        appdata = os.environ.get('APPDATA')
-        if appdata:
-            log_dir = Path(appdata) / 'ForguncyInsight' / 'logs'
-        else:
-            log_dir = Path.home() / '.forguncyinsight' / 'logs'
-    else:
-        log_dir = Path.home() / '.forguncyinsight' / 'logs'
-    log_dir.mkdir(parents=True, exist_ok=True)
-    return log_dir
-
-
-def setup_logging() -> logging.Logger:
-    """ロギングを設定"""
-    logger = logging.getLogger('ForguncyInsight')
-    logger.setLevel(logging.DEBUG)
-
-    # 既存のハンドラをクリア
-    logger.handlers.clear()
-
-    # ファイルハンドラ
-    log_file = get_log_dir() / 'app.log'
-    file_handler = logging.FileHandler(log_file, encoding='utf-8')
-    file_handler.setLevel(logging.DEBUG)
-    file_formatter = logging.Formatter(
-        '%(asctime)s [%(levelname)s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
-
-    # コンソールハンドラ（開発用）
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_formatter = logging.Formatter('[%(levelname)s] %(message)s')
-    console_handler.setFormatter(console_formatter)
-    logger.addHandler(console_handler)
-
-    return logger
-
-
-# グローバルロガー
-logger = setup_logging()
-
-
-# =============================================================================
-# ZIP安全ガード設定
-# =============================================================================
-ZIP_SAFETY_LIMITS = {
-    'max_file_size_mb': 200,        # 入力ファイルサイズ上限（MB）
-    'max_entries': 50000,           # ZIP内エントリ数上限
-    'max_uncompressed_size_gb': 1,  # 解凍後総サイズ上限（GB）
-}
-
-
-class ZipSafetyError(Exception):
-    """ZIP安全チェックエラー"""
-    pass
-
-
-def check_zip_safety(file_path: str, confirm_callback=None) -> dict:
-    """
-    ZIPファイルの安全性をチェック
-
-    Args:
-        file_path: チェックするファイルパス
-        confirm_callback: サイズ警告時の確認コールバック（Trueで続行）
-
-    Returns:
-        dict: チェック結果（entries, total_size, file_size）
-
-    Raises:
-        ZipSafetyError: 安全チェック失敗時
-    """
-    logger.info(f"ZIP安全チェック開始: {file_path}")
-
-    # ファイルサイズチェック
-    file_size = os.path.getsize(file_path)
-    file_size_mb = file_size / (1024 * 1024)
-    max_size_mb = ZIP_SAFETY_LIMITS['max_file_size_mb']
-
-    if file_size_mb > max_size_mb:
-        msg = f"ファイルサイズが大きすぎます: {file_size_mb:.1f}MB (上限: {max_size_mb}MB)"
-        if confirm_callback:
-            if not confirm_callback(f"{msg}\n\n処理を続行しますか？"):
-                raise ZipSafetyError("ユーザーによりキャンセルされました")
-        else:
-            raise ZipSafetyError(msg)
-
-    try:
-        with zipfile.ZipFile(file_path, 'r') as zf:
-            entries = zf.namelist()
-            entry_count = len(entries)
-
-            # エントリ数チェック
-            max_entries = ZIP_SAFETY_LIMITS['max_entries']
-            if entry_count > max_entries:
-                raise ZipSafetyError(
-                    f"ZIPエントリ数が多すぎます: {entry_count:,} (上限: {max_entries:,})"
-                )
-
-            # 解凍後サイズチェック
-            total_uncompressed = sum(info.file_size for info in zf.infolist())
-            max_uncompressed = ZIP_SAFETY_LIMITS['max_uncompressed_size_gb'] * 1024 * 1024 * 1024
-
-            if total_uncompressed > max_uncompressed:
-                raise ZipSafetyError(
-                    f"解凍後サイズが大きすぎます: {total_uncompressed / (1024**3):.1f}GB "
-                    f"(上限: {ZIP_SAFETY_LIMITS['max_uncompressed_size_gb']}GB)"
-                )
-
-            logger.info(
-                f"ZIP安全チェック完了: エントリ={entry_count:,}, "
-                f"圧縮前={file_size_mb:.1f}MB, 解凍後={total_uncompressed / (1024**2):.1f}MB"
-            )
-
-            return {
-                'entries': entry_count,
-                'total_size': total_uncompressed,
-                'file_size': file_size,
-            }
-
-    except zipfile.BadZipFile as e:
-        logger.error(f"不正なZIPファイル: {e}")
-        raise ZipSafetyError(f"ファイルが破損しているか、正しいFGCPファイルではありません: {e}")
-    except zlib.error as e:
-        logger.error(f"ZIP解凍エラー: {e}")
-        raise ZipSafetyError(f"ファイルの読み取りに失敗しました（圧縮データ破損）: {e}")
-
-
-# =============================================================================
-# 非同期処理用イベント
-# =============================================================================
-@dataclass
-class AnalysisEvent:
-    """解析イベント（UIスレッドへの通知用）"""
-    event_type: str  # 'progress', 'log', 'complete', 'error'
-    data: Any = None
 
 # ドラッグ＆ドロップサポート
 try:
@@ -229,13 +79,7 @@ EXPIRY_WARNING_DAYS = 30
 TRIAL_DAYS = 14
 
 # 署名用シークレットキー
-# セキュリティ: デフォルト値なし。環境変数が設定されていない場合はライセンス検証不可
-_SECRET_KEY_RAW = os.environ.get("INSIGHT_LICENSE_SECRET")
-_SECRET_KEY = _SECRET_KEY_RAW.encode() if _SECRET_KEY_RAW else None
-
-# 秘密鍵がない場合のライセンス検証モード
-# True: 秘密鍵なしでも動作（開発用）、False: 秘密鍵必須（本番用）
-_LICENSE_DEV_MODE = os.environ.get("INSIGHT_LICENSE_DEV_MODE", "").lower() == "true"
+_SECRET_KEY = b"insight-series-license-secret-2026"
 
 # 機能制限
 FEATURE_LIMITS = {
@@ -274,27 +118,19 @@ def _generate_email_hash(email: str) -> str:
     return base64.b32encode(h)[:4].decode().upper()
 
 
-def _generate_signature(data: str) -> Optional[str]:
-    """署名を生成（8文字）。秘密鍵がない場合はNone"""
-    if _SECRET_KEY is None:
-        return None
+def _generate_signature(data: str) -> str:
+    """署名を生成（8文字）"""
     sig = hmac.new(_SECRET_KEY, data.encode(), hashlib.sha256).digest()
-    encoded = base64.b32encode(sig)[:8].decode().upper()
-    return encoded
+    return base64.b32encode(sig)[:8].decode().upper()
 
 
 def _verify_signature(data: str, signature: str) -> bool:
-    """署名を検証。秘密鍵がない場合は常にFalse（開発モード除く）"""
-    if _SECRET_KEY is None:
-        if _LICENSE_DEV_MODE:
-            logger.warning("開発モード: ライセンス署名検証をスキップ")
-            return True
-        logger.warning("秘密鍵が設定されていないため、ライセンス検証不可")
+    """署名を検証"""
+    try:
+        expected = _generate_signature(data)
+        return hmac.compare_digest(expected, signature)
+    except Exception:
         return False
-    expected = _generate_signature(data)
-    if expected is None:
-        return False
-    return hmac.compare_digest(expected, signature)
 
 
 def validate_license_key(license_key: str, email: str) -> Dict:
@@ -856,76 +692,44 @@ def infer_parameter_type(validation_info: Optional[dict]) -> str:
 
 
 def analyze_project(file_path: str, progress_callback=None, limits=None) -> AnalysisResult:
-    """
-    Forguncyプロジェクトを解析
-
-    Args:
-        file_path: FGCPファイルパス
-        progress_callback: 進捗コールバック (pct, msg)
-        limits: 機能制限設定
-
-    Returns:
-        AnalysisResult: 解析結果
-
-    Raises:
-        ZipSafetyError: ZIP安全チェック失敗
-        zipfile.BadZipFile: 不正なZIPファイル
-        Exception: その他のエラー
-    """
+    """Forguncyプロジェクトを解析"""
     def send_progress(pct, msg):
         if progress_callback:
             progress_callback(pct, msg)
 
-    logger.info(f"解析開始: {file_path}")
     project_name = Path(file_path).stem
     limits = limits or FEATURE_LIMITS['FREE']
 
-    try:
-        with zipfile.ZipFile(file_path, 'r') as zf:
-            entries = zf.namelist()
-            logger.debug(f"ZIPエントリ数: {len(entries)}")
+    with zipfile.ZipFile(file_path, 'r') as zf:
+        entries = zf.namelist()
 
-            send_progress(15, 'テーブル定義を解析しています...')
-            max_tables = limits.get('max_tables', 5)
-            tables = analyze_tables(zf, entries, 999999 if max_tables == float('inf') else int(max_tables))
-            logger.info(f"テーブル解析完了: {len(tables)}件")
+        send_progress(15, 'テーブル定義を解析しています...')
+        max_tables = limits.get('max_tables', 5)
+        tables = analyze_tables(zf, entries, 999999 if max_tables == float('inf') else int(max_tables))
 
-            send_progress(25, 'ページ定義を解析しています...')
-            max_pages = limits.get('max_pages', 10)
-            pages = analyze_pages(zf, entries, 999999 if max_pages == float('inf') else int(max_pages))
-            logger.info(f"ページ解析完了: {len(pages)}件")
+        send_progress(25, 'ページ定義を解析しています...')
+        max_pages = limits.get('max_pages', 10)
+        pages = analyze_pages(zf, entries, 999999 if max_pages == float('inf') else int(max_pages))
 
-            send_progress(35, 'ワークフローを解析しています...')
-            max_wf = limits.get('max_workflows', 1)
-            max_wf = 999999 if max_wf == float('inf') else int(max_wf)
-            workflows = [t.workflow for t in tables if t.workflow][:max_wf]
-            logger.info(f"ワークフロー解析完了: {len(workflows)}件")
+        send_progress(35, 'ワークフローを解析しています...')
+        max_wf = limits.get('max_workflows', 1)
+        max_wf = 999999 if max_wf == float('inf') else int(max_wf)
+        workflows = [t.workflow for t in tables if t.workflow][:max_wf]
 
-            send_progress(45, 'サーバーコマンドを解析しています...')
-            max_cmds = limits.get('max_server_commands', 3)
-            server_commands = analyze_server_commands(zf, entries, 999999 if max_cmds == float('inf') else int(max_cmds))
-            logger.info(f"サーバーコマンド解析完了: {len(server_commands)}件")
+        send_progress(45, 'サーバーコマンドを解析しています...')
+        max_cmds = limits.get('max_server_commands', 3)
+        server_commands = analyze_server_commands(zf, entries, 999999 if max_cmds == float('inf') else int(max_cmds))
 
-        summary = AnalysisSummary(
-            table_count=len(tables),
-            page_count=len(pages),
-            workflow_count=len(workflows),
-            server_command_count=len(server_commands),
-            total_columns=sum(len(t.columns) for t in tables),
-            total_relations=sum(len(t.relations) for t in tables)
-        )
+    summary = AnalysisSummary(
+        table_count=len(tables),
+        page_count=len(pages),
+        workflow_count=len(workflows),
+        server_command_count=len(server_commands),
+        total_columns=sum(len(t.columns) for t in tables),
+        total_relations=sum(len(t.relations) for t in tables)
+    )
 
-        logger.info(f"解析完了: テーブル={summary.table_count}, ページ={summary.page_count}, "
-                    f"ワークフロー={summary.workflow_count}, サーバーコマンド={summary.server_command_count}")
-
-        return AnalysisResult(project_name=project_name, tables=tables, pages=pages, workflows=workflows, server_commands=server_commands, summary=summary)
-
-    except zipfile.BadZipFile as e:
-        logger.error(f"不正なZIPファイル: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"解析エラー: {e}\n{traceback.format_exc()}")
-        raise
+    return AnalysisResult(project_name=project_name, tables=tables, pages=pages, workflows=workflows, server_commands=server_commands, summary=summary)
 
 
 def analyze_tables(zf: zipfile.ZipFile, entries: list, max_count: int = 999) -> list:
@@ -967,7 +771,7 @@ def analyze_tables(zf: zipfile.ZipFile, entries: list, max_count: int = 999) -> 
 
             tables.append(table)
         except Exception as e:
-            logger.warning(f"テーブル解析スキップ {entry}: {e}")
+            print(f"Error parsing table {entry}: {e}")
 
     return tables
 
@@ -1000,9 +804,9 @@ def analyze_pages(zf: zipfile.ZipFile, entries: list, max_count: int = 999) -> l
     # エラーがあった場合はログに記録（将来的にはUIに表示）
     if parse_errors:
         for err in parse_errors[:5]:
-            logger.warning(err)
+            print(f"Warning: {err}")
         if len(parse_errors) > 5:
-            logger.warning(f"... 他 {len(parse_errors) - 5} 件のエラー")
+            print(f"... and {len(parse_errors) - 5} more errors")
 
     return pages
 
@@ -1066,7 +870,7 @@ def analyze_server_commands(zf: zipfile.ZipFile, entries: list, max_count: int =
 
             server_commands.append(ServerCommandInfo(name=data.get('Name', Path(entry).stem), folder=folder, path=entry, commands=commands, raw_commands=raw_commands, parameters=parameters))
         except Exception as e:
-            logger.warning(f"サーバーコマンド解析スキップ {entry}: {e}")
+            print(f"Error parsing server command {entry}: {e}")
 
     return server_commands
 
@@ -1608,28 +1412,36 @@ def generate_er_mermaid(tables: list) -> str:
 # GUI - モダンUI設定
 # =============================================================================
 
-# カラーパレット
+# カラーパレット（統一デザイン）
 COLORS = {
-    "primary": "#3B82F6",        # ブルー
+    "primary": "#3B82F6",        # ブルー - Unified
     "primary_hover": "#2563EB",  # ダークブルー
-    "success": "#10B981",        # グリーン
+    "success": "#10B981",        # グリーン - Unified
     "warning": "#F59E0B",        # オレンジ
-    "danger": "#EF4444",         # レッド
-    "bg": "#F8FAFC",             # 背景
-    "surface": "#FFFFFF",        # カード背景
-    "text": "#1E293B",           # メインテキスト
-    "text_secondary": "#64748B", # サブテキスト
-    "text_muted": "#94A3B8",     # ミュートテキスト
-    "border": "#E2E8F0",         # ボーダー
+    "danger": "#EF4444",         # レッド - Unified
+    "error": "#EF4444",          # エラー（danger の alias）
+    "bg": "#F8FAFC",             # 背景 - Unified
+    "background": "#F8FAFC",     # 背景（bg の alias）
+    "surface": "#FFFFFF",        # カード背景 - Unified
+    "text": "#1E293B",           # メインテキスト - Unified
+    "text_secondary": "#64748B", # サブテキスト - Unified
+    "text_muted": "#94A3B8",     # ミュートテキスト - Unified
+    "border": "#E2E8F0",         # ボーダー - Unified
 }
 
-# フォント設定
-FONT_FAMILY = "Yu Gothic UI"
+# フォント設定（統一デザイン - クリーンで読みやすい）
+FONT_FAMILY = "Meiryo UI"
 FONTS = {
-    "title": (FONT_FAMILY, 20, "bold"),
-    "heading": (FONT_FAMILY, 14, "bold"),
-    "body": (FONT_FAMILY, 11),
-    "small": (FONT_FAMILY, 10),
+    "title": (FONT_FAMILY, 16, "bold"),
+    "heading": (FONT_FAMILY, 12, "bold"),
+    "body": (FONT_FAMILY, 10),
+    "small": (FONT_FAMILY, 9),
+    "code": ("Consolas", 10),
+    # 日本語対応のフォールバック（同一フォント）
+    "title_ja": (FONT_FAMILY, 16, "bold"),
+    "heading_ja": (FONT_FAMILY, 12, "bold"),
+    "body_ja": (FONT_FAMILY, 10),
+    "small_ja": (FONT_FAMILY, 9),
 }
 
 
@@ -1642,18 +1454,18 @@ class LicenseActivationDialog:
         self.result = False
 
         self.dialog = Toplevel(parent)
-        self.dialog.title("ライセンス管理")
-        self.dialog.geometry("500x580")
+        self.dialog.title(PRODUCT_NAME)
+        self.dialog.geometry("550x580")
         self.dialog.resizable(False, False)
         self.dialog.transient(parent)
         self.dialog.grab_set()
-        self.dialog.configure(bg=COLORS["bg"])
+        self.dialog.configure(bg=COLORS["background"])
 
         # ダイアログを中央に配置
         self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() - 500) // 2
+        x = (self.dialog.winfo_screenwidth() - 550) // 2
         y = (self.dialog.winfo_screenheight() - 580) // 2
-        self.dialog.geometry(f"500x580+{x}+{y}")
+        self.dialog.geometry(f"550x580+{x}+{y}")
 
         # アクティベート状態に応じてUIを切り替え
         if self.license_manager.is_activated:
@@ -1665,77 +1477,72 @@ class LicenseActivationDialog:
         self.dialog.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def setup_status_ui(self):
-        """アクティベート済みの場合：ステータス表示UI"""
+        """アクティベート済みの場合：ステータス表示UI（統一デザイン）"""
         card = Frame(self.dialog, bg=COLORS["surface"], padx=40, pady=30)
         card.pack(fill='both', expand=True, padx=20, pady=20)
 
         # タイトル
         Label(card, text=PRODUCT_NAME, font=FONTS["title"],
-              bg=COLORS["surface"], fg=COLORS["primary"]).pack(pady=(0, 5))
-        Label(card, text="ライセンス情報", font=FONTS["heading"],
-              bg=COLORS["surface"], fg=COLORS["text_secondary"]).pack(pady=(0, 25))
+              bg=COLORS["surface"], fg=COLORS["text"]).pack(pady=(0, 20))
 
-        # ステータスカード
-        status_frame = Frame(card, bg="#ECFDF5", padx=20, pady=15)
-        status_frame.pack(fill='x', pady=10)
+        # 現在のステータスセクション
+        status_frame = Frame(card, bg="#F8FAFC", padx=20, pady=15)
+        status_frame.pack(fill='x', pady=(0, 20))
 
+        # ステータスラベル
         Label(status_frame, text="✓ ライセンス有効", font=FONTS["heading"],
-              bg="#ECFDF5", fg=COLORS["success"]).pack(anchor='w')
+              bg="#F8FAFC", fg=COLORS["primary"]).pack(anchor='w', pady=(0, 5))
 
         # ライセンス詳細
-        info_frame = Frame(card, bg=COLORS["bg"], padx=20, pady=15)
-        info_frame.pack(fill='x', pady=10)
+        details_text = f"{self.license_manager.tier_name}"
+        if self.license_manager.expires_at:
+            expiry_str = self.license_manager.expires_at.strftime('%Y年%m月%d日')
+            details_text += f" - 有効期限: {expiry_str}"
+            days = self.license_manager.days_until_expiry
+            if days is not None and days <= 30:
+                details_text += f" ({days}日)"
 
-        details = [
-            ("プラン", self.license_manager.tier_name),
-            ("メールアドレス", self.license_manager.email or "-"),
-            ("有効期限", self.license_manager.expires_at.strftime('%Y年%m月%d日') if self.license_manager.expires_at else "-"),
-        ]
-
-        # 残り日数
-        days = self.license_manager.days_until_expiry
-        if days is not None:
-            if days <= 30:
-                details.append(("残り日数", f"{days}日 ⚠️"))
-            else:
-                details.append(("残り日数", f"{days}日"))
-
-        for label_text, value in details:
-            row = Frame(info_frame, bg=COLORS["bg"])
-            row.pack(fill='x', pady=3)
-            Label(row, text=f"{label_text}:", font=FONTS["body"],
-                  bg=COLORS["bg"], fg=COLORS["text_secondary"], width=15, anchor='w').pack(side='left')
-            Label(row, text=value, font=FONTS["body"],
-                  bg=COLORS["bg"], fg=COLORS["text"]).pack(side='left')
-
-        # ライセンスキー（マスク表示）
-        if self.license_manager.license_key:
-            key = self.license_manager.license_key
-            masked_key = key[:9] + "****-****-****"
-            row = Frame(info_frame, bg=COLORS["bg"])
-            row.pack(fill='x', pady=3)
-            Label(row, text="ライセンスキー:", font=FONTS["body"],
-                  bg=COLORS["bg"], fg=COLORS["text_secondary"], width=15, anchor='w').pack(side='left')
-            Label(row, text=masked_key, font=FONTS["small"],
-                  bg=COLORS["bg"], fg=COLORS["text_muted"]).pack(side='left')
+        Label(status_frame, text=details_text, font=FONTS["body"],
+              bg="#F8FAFC", fg=COLORS["text_secondary"]).pack(anchor='w')
 
         # 期限警告
         if self.license_manager.is_expiring_soon:
             warning_frame = Frame(card, bg="#FEF3C7", padx=15, pady=10)
-            warning_frame.pack(fill='x', pady=10)
-            Label(warning_frame, text=f"⚠️ {self.license_manager.expiry_warning_message}",
-                  font=FONTS["small"], bg="#FEF3C7", fg="#92400E", wraplength=380).pack()
+            warning_frame.pack(fill='x', pady=(0, 20))
+            Label(warning_frame, text=f"⚠ {self.license_manager.expiry_warning_message}",
+                  font=FONTS["small"], bg="#FEF3C7", fg="#92400E", wraplength=450).pack()
 
-        # ボタンフレーム
+        # ライセンス入力フォーム（再認証用）
+        form_label = Label(card, text="License Activation", font=FONTS["heading"],
+                          bg=COLORS["surface"], fg=COLORS["text"])
+        form_label.pack(anchor='w', pady=(0, 15))
+
+        # メールアドレス
+        Label(card, text="メールアドレス:", anchor='w',
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x', pady=(0, 5))
+        email_entry = Entry(card, width=50, font=FONTS["body"], relief='solid', bd=1)
+        if self.license_manager.email:
+            email_entry.insert(0, self.license_manager.email)
+        email_entry.pack(fill='x', pady=(0, 15), ipady=5)
+        email_entry.config(state='readonly')
+
+        # ライセンスキー（マスク表示）
+        Label(card, text="ライセンスキー:", anchor='w',
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x', pady=(0, 5))
+        key_display = Entry(card, width=50, font=FONTS["code"], relief='solid', bd=1)
+        if self.license_manager.license_key:
+            masked_key = self.license_manager.license_key[:9] + "****-****-****"
+            key_display.insert(0, masked_key)
+        key_display.pack(fill='x', pady=(0, 5), ipady=5)
+        key_display.config(state='readonly')
+
+        # ボタンフレーム（統一デザイン）
         btn_frame = Frame(card, bg=COLORS["surface"])
         btn_frame.pack(pady=20)
 
         Button(btn_frame, text="閉じる", command=self.on_close,
                bg=COLORS["primary"], fg='white', font=FONTS["body"],
-               padx=25, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=5)
-        Button(btn_frame, text="ライセンス解除", command=self.on_deactivate,
-               bg=COLORS["bg"], fg=COLORS["danger"], font=FONTS["body"],
-               padx=15, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=5)
+               padx=25, pady=8, relief='flat', cursor='hand2').pack(side='right')
 
         # 更新リンク
         if self.license_manager.is_expiring_soon:
@@ -1745,68 +1552,60 @@ class LicenseActivationDialog:
             renew_link.bind('<Button-1>', lambda e: webbrowser.open(PURCHASE_URL))
 
     def setup_activate_ui(self):
-        """未アクティベートの場合：認証UI"""
+        """未アクティベートの場合：認証UI（統一デザイン）"""
         card = Frame(self.dialog, bg=COLORS["surface"], padx=40, pady=30)
         card.pack(fill='both', expand=True, padx=20, pady=20)
 
         # タイトル
         Label(card, text=PRODUCT_NAME, font=FONTS["title"],
-              bg=COLORS["surface"], fg=COLORS["primary"]).pack(pady=(0, 5))
-        Label(card, text="ライセンス認証", font=FONTS["heading"],
-              bg=COLORS["surface"], fg=COLORS["text_secondary"]).pack(pady=(0, 25))
+              bg=COLORS["surface"], fg=COLORS["text"]).pack(pady=(0, 20))
 
-        # 説明
-        desc_text = "製品をご利用いただくには、ライセンスキーの認証が必要です。"
-        Label(card, text=desc_text, wraplength=400, justify='left',
-              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w', pady=(0, 20))
+        # 現在のステータスセクション
+        status_frame = Frame(card, bg="#F8FAFC", padx=15, pady=15)
+        status_frame.pack(fill='x', pady=(0, 20))
+
+        Label(status_frame, text="○ Free版", font=FONTS["heading"],
+              bg="#F8FAFC", fg=COLORS["text_muted"]).pack(anchor='w')
+        Label(status_frame, text="ライセンス未認証",
+              font=FONTS["body"], bg="#F8FAFC", fg=COLORS["text_secondary"]).pack(anchor='w', pady=(5, 0))
+
+        # ライセンス入力フォーム
+        form_label = Label(card, text="License Activation", font=FONTS["heading"],
+                          bg=COLORS["surface"], fg=COLORS["text"])
+        form_label.pack(anchor='w', pady=(0, 15))
 
         # メールアドレス
         Label(card, text="メールアドレス:", anchor='w',
-              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x')
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x', pady=(0, 5))
         self.email_entry = Entry(card, width=50, font=FONTS["body"], relief='solid', bd=1)
-        self.email_entry.pack(fill='x', pady=(5, 15), ipady=5)
+        self.email_entry.pack(fill='x', pady=(0, 15), ipady=5)
 
         # ライセンスキー
         Label(card, text="ライセンスキー:", anchor='w',
-              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x')
-        self.key_entry = Entry(card, width=50, font=FONTS["body"], relief='solid', bd=1)
-        self.key_entry.pack(fill='x', pady=(5, 8), ipady=5)
-        Label(card, text="例: FGIN-STD-2601-XXXX-XXXX-XXXX",
-              fg=COLORS["text_muted"], font=FONTS["small"], bg=COLORS["surface"]).pack(anchor='w')
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x', pady=(0, 5))
+        Label(card, text="Format: FGIN-STD-YYMM-XXXX-XXXX-XXXX",
+              fg=COLORS["text_muted"], font=FONTS["small"], bg=COLORS["surface"]).pack(anchor='w', pady=(0, 5))
+        self.key_entry = Entry(card, width=50, font=FONTS["code"], relief='solid', bd=1)
+        self.key_entry.pack(fill='x', pady=(0, 5), ipady=5)
 
         # エラーメッセージ
-        self.error_label = Label(card, text="", fg=COLORS["danger"], wraplength=400,
+        self.error_label = Label(card, text="", fg=COLORS["error"], wraplength=450,
                                   font=FONTS["small"], bg=COLORS["surface"])
-        self.error_label.pack(pady=10)
+        self.error_label.pack(pady=15)
 
-        # ボタンフレーム
+        # ボタンフレーム（統一デザイン: Activate / Close）
         btn_frame = Frame(card, bg=COLORS["surface"])
         btn_frame.pack(pady=15)
 
         Button(btn_frame, text="認証", command=self.on_activate,
                bg=COLORS["primary"], fg='white', font=FONTS["body"],
-               padx=25, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=5)
-        Button(btn_frame, text="Free版で続行", command=self.on_continue_free,
+               padx=25, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=(0, 10))
+        Button(btn_frame, text="閉じる", command=self.on_continue_free,
                bg=COLORS["bg"], fg=COLORS["text"], font=FONTS["body"],
-               padx=15, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=5)
+               padx=20, pady=8, relief='flat', cursor='hand2').pack(side='right')
 
-        # リンクフレーム
-        link_frame = Frame(card, bg=COLORS["surface"])
-        link_frame.pack(pady=10)
-
-        trial_link = Label(link_frame, text="トライアル申請", fg=COLORS["primary"],
-                           cursor='hand2', font=FONTS["small"], bg=COLORS["surface"])
-        trial_link.pack(side='left', padx=10)
-        trial_link.bind('<Button-1>', lambda e: webbrowser.open(TRIAL_URL))
-
-        purchase_link = Label(link_frame, text="ライセンス購入", fg=COLORS["primary"],
-                               cursor='hand2', font=FONTS["small"], bg=COLORS["surface"])
-        purchase_link.pack(side='left', padx=10)
-        purchase_link.bind('<Button-1>', lambda e: webbrowser.open(PURCHASE_URL))
-
-        # 価格表示
-        Label(card, text=f"Standard版: {PRICE_STANDARD}",
-              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text_secondary"]).pack(pady=5)
+        # フォーカス設定
+        self.email_entry.focus_set()
 
     def on_activate(self):
         email = self.email_entry.get().strip()
@@ -1862,7 +1661,7 @@ class ForguncyInsightApp:
     def __init__(self, root: Tk):
         self.root = root
         self.root.title(f"Forguncy Insight {VERSION_INFO}")
-        self.root.geometry("800x850")  # ログ表示欄追加のため高さ増加
+        self.root.geometry("800x780")
         self.root.resizable(True, True)
         self.root.configure(bg=COLORS["bg"])
 
@@ -1870,13 +1669,8 @@ class ForguncyInsightApp:
         try:
             import ctypes
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
-        except Exception:
+        except:
             pass
-
-        # 非同期処理用
-        self.event_queue = queue.Queue()
-        self.analysis_thread = None
-        self.is_analyzing = False
 
         self.license_manager = LicenseManager()
         self.file_path = StringVar()
@@ -1885,14 +1679,6 @@ class ForguncyInsightApp:
 
         self.setup_styles()
         self.setup_ui()
-
-        # イベントキューのポーリング開始
-        self._poll_event_queue()
-
-        # 起動時ログ
-        logger.info(f"アプリケーション起動: {VERSION_INFO}")
-        self._log_to_ui(f"Forguncy Insight {VERSION_INFO} 起動完了")
-        self._log_to_ui(f"ログファイル: {get_log_dir() / 'app.log'}")
 
         # 起動時ライセンスチェック（UIセットアップ後）
         if not self.license_manager.is_activated:
@@ -2066,34 +1852,6 @@ class ForguncyInsightApp:
             limit_text = f"Free版制限: テーブル{int(limits['max_tables'])}件, ページ{int(limits['max_pages'])}件, サーバーコマンド{int(limits['max_server_commands'])}件"
             Label(self.tab_analyze, text=limit_text, fg=COLORS["text_muted"],
                   font=FONTS["small"], bg=COLORS["surface"]).pack()
-
-        # ログ表示エリア
-        log_frame = Frame(self.tab_analyze, bg=COLORS["surface"])
-        log_frame.pack(fill='both', expand=True, pady=(10, 0))
-
-        log_header = Frame(log_frame, bg=COLORS["surface"])
-        log_header.pack(fill='x')
-        Label(log_header, text="ログ", font=FONTS["small"], bg=COLORS["surface"],
-              fg=COLORS["text_muted"]).pack(side='left')
-        Button(log_header, text="クリア", font=FONTS["small"], bg=COLORS["bg"],
-               fg=COLORS["text_muted"], relief='flat', padx=5,
-               command=self._clear_log).pack(side='right')
-
-        log_border = Frame(log_frame, bg=COLORS["border"], padx=1, pady=1)
-        log_border.pack(fill='both', expand=True)
-
-        self.log_text = Text(log_border, height=6, font=("Consolas", 9), bg="#FAFAFA",
-                             fg=COLORS["text"], wrap=WORD, state='disabled',
-                             relief='flat', padx=8, pady=8)
-        log_scrollbar = Scrollbar(log_border, orient=VERTICAL, command=self.log_text.yview)
-        self.log_text.configure(yscrollcommand=log_scrollbar.set)
-        log_scrollbar.pack(side='right', fill='y')
-        self.log_text.pack(side='left', fill='both', expand=True)
-
-        # ログテキストのタグ設定（色分け用）
-        self.log_text.tag_configure('INFO', foreground=COLORS["text"])
-        self.log_text.tag_configure('WARNING', foreground=COLORS["warning"])
-        self.log_text.tag_configure('ERROR', foreground=COLORS["danger"])
 
     def setup_diff_tab(self):
         Label(self.tab_diff, text="プロジェクト差分比較", font=FONTS["heading"],
@@ -2293,177 +2051,54 @@ class ForguncyInsightApp:
             self.output_dir.set(path)
 
     def update_progress(self, pct: int, msg: str):
-        """進捗を更新（UIスレッドから呼び出し）"""
         self.progress['value'] = pct
         self.status_label.config(text=msg)
         self.root.update_idletasks()
 
-    def _poll_event_queue(self):
-        """イベントキューをポーリングしてUI更新（100ms間隔）"""
-        try:
-            while True:
-                event = self.event_queue.get_nowait()
-                self._handle_event(event)
-        except queue.Empty:
-            pass
-        # 次のポーリングをスケジュール
-        self.root.after(100, self._poll_event_queue)
-
-    def _handle_event(self, event: AnalysisEvent):
-        """イベントを処理"""
-        if event.event_type == 'progress':
-            pct, msg = event.data
-            self.update_progress(pct, msg)
-        elif event.event_type == 'log':
-            level, msg = event.data
-            self._log_to_ui(msg, level)
-        elif event.event_type == 'complete':
-            self._on_analysis_complete(event.data)
-        elif event.event_type == 'error':
-            self._on_analysis_error(event.data)
-
-    def _log_to_ui(self, msg: str, level: str = 'INFO'):
-        """UIのログ表示欄にメッセージを追加"""
-        timestamp = datetime.now().strftime('%H:%M:%S')
-        self.log_text.configure(state='normal')
-        self.log_text.insert(END, f"[{timestamp}] {msg}\n", level)
-        self.log_text.see(END)
-        self.log_text.configure(state='disabled')
-
-    def _clear_log(self):
-        """ログ表示をクリア"""
-        self.log_text.configure(state='normal')
-        self.log_text.delete(1.0, END)
-        self.log_text.configure(state='disabled')
-
-    def _confirm_large_file(self, msg: str) -> bool:
-        """大きいファイルの処理確認"""
-        return messagebox.askyesno("確認", msg)
-
     def start_analysis(self):
-        """解析を開始（非同期）"""
         if not self.file_path.get():
             messagebox.showerror("エラー", "プロジェクトファイルを選択してください")
             return
 
-        if self.is_analyzing:
-            messagebox.showwarning("警告", "解析中です。完了をお待ちください。")
-            return
-
-        file_path = self.file_path.get()
-
-        # ZIP安全チェック（UIスレッドで実行、確認ダイアログ表示のため）
-        try:
-            self._log_to_ui(f"ファイルチェック中: {Path(file_path).name}")
-            check_zip_safety(file_path, self._confirm_large_file)
-        except ZipSafetyError as e:
-            logger.warning(f"ZIP安全チェック失敗: {e}")
-            self._log_to_ui(str(e), 'ERROR')
-            messagebox.showerror("ファイルエラー", str(e))
-            return
-
-        # UI状態を更新
-        self.is_analyzing = True
-        self.analyze_btn.config(state='disabled', text="解析中...")
+        self.analyze_btn.config(state='disabled')
         self.progress['value'] = 0
 
-        self._log_to_ui(f"解析開始: {Path(file_path).name}")
-
-        # バックグラウンドスレッドで解析実行
-        self.analysis_thread = threading.Thread(
-            target=self._run_analysis_thread,
-            args=(file_path, self.output_dir.get(), self.license_manager.limits),
-            daemon=True
-        )
-        self.analysis_thread.start()
-
-    def _run_analysis_thread(self, file_path: str, output_dir: str, limits: dict):
-        """解析処理（バックグラウンドスレッド）"""
-        generated_files = []
         try:
-            # 進捗コールバック（キュー経由でUIに通知）
-            def progress_callback(pct, msg):
-                self.event_queue.put(AnalysisEvent('progress', (pct, msg)))
-                self.event_queue.put(AnalysisEvent('log', ('INFO', msg)))
+            self.update_progress(10, "解析を開始しています...")
+            analysis = analyze_project(self.file_path.get(), self.update_progress, self.license_manager.limits)
 
-            progress_callback(10, "解析を開始しています...")
-            analysis = analyze_project(file_path, progress_callback, limits)
+            generated_files = []
 
             # Word出力
-            if limits.get('word_export'):
-                progress_callback(70, "Word仕様書を生成しています...")
-                word_path = generate_spec_document(analysis, output_dir)
+            if self.license_manager.limits.get('word_export'):
+                self.update_progress(70, "Word仕様書を生成しています...")
+                word_path = generate_spec_document(analysis, self.output_dir.get())
                 generated_files.append(word_path)
-                logger.info(f"Word出力完了: {word_path}")
 
             # Excel出力
-            if limits.get('excel_export') and EXCEL_AVAILABLE:
-                progress_callback(85, "Excel仕様書を生成しています...")
-                excel_path = generate_excel_document(analysis, output_dir)
+            if self.license_manager.limits.get('excel_export') and EXCEL_AVAILABLE:
+                self.update_progress(85, "Excel仕様書を生成しています...")
+                excel_path = generate_excel_document(analysis, self.output_dir.get())
                 generated_files.append(excel_path)
-                logger.info(f"Excel出力完了: {excel_path}")
 
-            progress_callback(100, "完了しました!")
+            self.update_progress(100, "完了しました!")
 
-            # 完了イベント
-            self.event_queue.put(AnalysisEvent('complete', {
-                'analysis': analysis,
-                'generated_files': generated_files,
-                'output_dir': output_dir,
-            }))
+            msg = f"解析が完了しました。\n\nテーブル: {analysis.summary.table_count}件\nページ: {analysis.summary.page_count}件"
+            if generated_files:
+                msg += f"\n\n生成ファイル:\n" + "\n".join(generated_files)
+            else:
+                msg += "\n\n※ Word/Excel出力にはStandard版が必要です"
+
+            messagebox.showinfo("完了", msg)
+
+            if generated_files and os.name == 'nt':
+                os.startfile(self.output_dir.get())
 
         except Exception as e:
-            logger.error(f"解析エラー: {e}\n{traceback.format_exc()}")
-            self.event_queue.put(AnalysisEvent('error', {
-                'error': str(e),
-                'traceback': traceback.format_exc(),
-            }))
-
-    def _on_analysis_complete(self, data: dict):
-        """解析完了時の処理（UIスレッド）"""
-        self.is_analyzing = False
-        self.analyze_btn.config(state='normal', text="解析開始")
-
-        analysis = data['analysis']
-        generated_files = data['generated_files']
-        output_dir = data['output_dir']
-
-        self._log_to_ui(f"解析完了: テーブル={analysis.summary.table_count}, ページ={analysis.summary.page_count}")
-
-        msg = f"解析が完了しました。\n\nテーブル: {analysis.summary.table_count}件\nページ: {analysis.summary.page_count}件"
-        if generated_files:
-            msg += f"\n\n生成ファイル:\n" + "\n".join(generated_files)
-            for f in generated_files:
-                self._log_to_ui(f"生成: {f}")
-        else:
-            msg += "\n\n※ Word/Excel出力にはStandard版が必要です"
-
-        messagebox.showinfo("完了", msg)
-
-        if generated_files and os.name == 'nt':
-            try:
-                os.startfile(output_dir)
-            except Exception:
-                pass
-
-    def _on_analysis_error(self, data: dict):
-        """解析エラー時の処理（UIスレッド）"""
-        self.is_analyzing = False
-        self.analyze_btn.config(state='normal', text="解析開始")
-        self.update_progress(0, "エラーが発生しました")
-
-        error_msg = data['error']
-        tb = data.get('traceback', '')
-
-        self._log_to_ui(f"エラー: {error_msg}", 'ERROR')
-
-        # エラーダイアログにログファイルの場所を表示
-        log_path = get_log_dir() / 'app.log'
-        messagebox.showerror(
-            "エラー",
-            f"解析中にエラーが発生しました:\n{error_msg}\n\n"
-            f"詳細はログファイルを確認してください:\n{log_path}"
-        )
+            messagebox.showerror("エラー", f"解析中にエラーが発生しました:\n{str(e)}")
+            self.update_progress(0, "")
+        finally:
+            self.analyze_btn.config(state='normal')
 
     def compare_files(self):
         if not self.file_path.get() or not self.file_path2.get():
