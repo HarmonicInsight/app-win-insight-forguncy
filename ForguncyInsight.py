@@ -704,17 +704,21 @@ def analyze_project(file_path: str, progress_callback=None, limits=None) -> Anal
         entries = zf.namelist()
 
         send_progress(15, 'テーブル定義を解析しています...')
-        tables = analyze_tables(zf, entries, int(limits.get('max_tables', 5)))
+        max_tables = limits.get('max_tables', 5)
+        tables = analyze_tables(zf, entries, 999999 if max_tables == float('inf') else int(max_tables))
 
         send_progress(25, 'ページ定義を解析しています...')
-        pages = analyze_pages(zf, entries, int(limits.get('max_pages', 10)))
+        max_pages = limits.get('max_pages', 10)
+        pages = analyze_pages(zf, entries, 999999 if max_pages == float('inf') else int(max_pages))
 
         send_progress(35, 'ワークフローを解析しています...')
-        max_wf = int(limits.get('max_workflows', 1))
+        max_wf = limits.get('max_workflows', 1)
+        max_wf = 999999 if max_wf == float('inf') else int(max_wf)
         workflows = [t.workflow for t in tables if t.workflow][:max_wf]
 
         send_progress(45, 'サーバーコマンドを解析しています...')
-        server_commands = analyze_server_commands(zf, entries, int(limits.get('max_server_commands', 3)))
+        max_cmds = limits.get('max_server_commands', 3)
+        server_commands = analyze_server_commands(zf, entries, 999999 if max_cmds == float('inf') else int(max_cmds))
 
     summary = AnalysisSummary(
         table_count=len(tables),
@@ -1229,8 +1233,8 @@ class LicenseActivationDialog:
         self.result = False
 
         self.dialog = Toplevel(parent)
-        self.dialog.title("ライセンス認証")
-        self.dialog.geometry("500x480")
+        self.dialog.title("ライセンス管理")
+        self.dialog.geometry("500x520")
         self.dialog.resizable(False, False)
         self.dialog.transient(parent)
         self.dialog.grab_set()
@@ -1239,16 +1243,100 @@ class LicenseActivationDialog:
         # ダイアログを中央に配置
         self.dialog.update_idletasks()
         x = (self.dialog.winfo_screenwidth() - 500) // 2
-        y = (self.dialog.winfo_screenheight() - 480) // 2
-        self.dialog.geometry(f"500x480+{x}+{y}")
+        y = (self.dialog.winfo_screenheight() - 520) // 2
+        self.dialog.geometry(f"500x520+{x}+{y}")
 
-        self.setup_ui()
+        # アクティベート状態に応じてUIを切り替え
+        if self.license_manager.is_activated:
+            self.setup_status_ui()
+        else:
+            self.setup_activate_ui()
 
         # 閉じるボタンの処理
-        self.dialog.protocol("WM_DELETE_WINDOW", self.on_cancel)
+        self.dialog.protocol("WM_DELETE_WINDOW", self.on_close)
 
-    def setup_ui(self):
-        # メインカード
+    def setup_status_ui(self):
+        """アクティベート済みの場合：ステータス表示UI"""
+        card = Frame(self.dialog, bg=COLORS["surface"], padx=40, pady=30)
+        card.pack(fill='both', expand=True, padx=20, pady=20)
+
+        # タイトル
+        Label(card, text=PRODUCT_NAME, font=FONTS["title"],
+              bg=COLORS["surface"], fg=COLORS["primary"]).pack(pady=(0, 5))
+        Label(card, text="ライセンス情報", font=FONTS["heading"],
+              bg=COLORS["surface"], fg=COLORS["text_secondary"]).pack(pady=(0, 25))
+
+        # ステータスカード
+        status_frame = Frame(card, bg="#ECFDF5", padx=20, pady=15)
+        status_frame.pack(fill='x', pady=10)
+
+        Label(status_frame, text="✓ ライセンス有効", font=FONTS["heading"],
+              bg="#ECFDF5", fg=COLORS["success"]).pack(anchor='w')
+
+        # ライセンス詳細
+        info_frame = Frame(card, bg=COLORS["bg"], padx=20, pady=15)
+        info_frame.pack(fill='x', pady=10)
+
+        details = [
+            ("プラン", self.license_manager.tier_name),
+            ("メールアドレス", self.license_manager.email or "-"),
+            ("有効期限", self.license_manager.expires_at.strftime('%Y年%m月%d日') if self.license_manager.expires_at else "-"),
+        ]
+
+        # 残り日数
+        days = self.license_manager.days_until_expiry
+        if days is not None:
+            if days <= 30:
+                details.append(("残り日数", f"{days}日 ⚠️"))
+            else:
+                details.append(("残り日数", f"{days}日"))
+
+        for label_text, value in details:
+            row = Frame(info_frame, bg=COLORS["bg"])
+            row.pack(fill='x', pady=3)
+            Label(row, text=f"{label_text}:", font=FONTS["body"],
+                  bg=COLORS["bg"], fg=COLORS["text_secondary"], width=15, anchor='w').pack(side='left')
+            Label(row, text=value, font=FONTS["body"],
+                  bg=COLORS["bg"], fg=COLORS["text"]).pack(side='left')
+
+        # ライセンスキー（マスク表示）
+        if self.license_manager.license_key:
+            key = self.license_manager.license_key
+            masked_key = key[:9] + "****-****-****"
+            row = Frame(info_frame, bg=COLORS["bg"])
+            row.pack(fill='x', pady=3)
+            Label(row, text="ライセンスキー:", font=FONTS["body"],
+                  bg=COLORS["bg"], fg=COLORS["text_secondary"], width=15, anchor='w').pack(side='left')
+            Label(row, text=masked_key, font=FONTS["small"],
+                  bg=COLORS["bg"], fg=COLORS["text_muted"]).pack(side='left')
+
+        # 期限警告
+        if self.license_manager.is_expiring_soon:
+            warning_frame = Frame(card, bg="#FEF3C7", padx=15, pady=10)
+            warning_frame.pack(fill='x', pady=10)
+            Label(warning_frame, text=f"⚠️ {self.license_manager.expiry_warning_message}",
+                  font=FONTS["small"], bg="#FEF3C7", fg="#92400E", wraplength=380).pack()
+
+        # ボタンフレーム
+        btn_frame = Frame(card, bg=COLORS["surface"])
+        btn_frame.pack(pady=20)
+
+        Button(btn_frame, text="閉じる", command=self.on_close,
+               bg=COLORS["primary"], fg='white', font=FONTS["body"],
+               padx=25, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=5)
+        Button(btn_frame, text="ライセンス解除", command=self.on_deactivate,
+               bg=COLORS["bg"], fg=COLORS["danger"], font=FONTS["body"],
+               padx=15, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=5)
+
+        # 更新リンク
+        if self.license_manager.is_expiring_soon:
+            renew_link = Label(card, text="ライセンスを更新する", fg=COLORS["primary"],
+                               cursor='hand2', font=FONTS["body"], bg=COLORS["surface"])
+            renew_link.pack(pady=5)
+            renew_link.bind('<Button-1>', lambda e: webbrowser.open(PURCHASE_URL))
+
+    def setup_activate_ui(self):
+        """未アクティベートの場合：認証UI"""
         card = Frame(self.dialog, bg=COLORS["surface"], padx=40, pady=30)
         card.pack(fill='both', expand=True, padx=20, pady=20)
 
@@ -1274,7 +1362,7 @@ class LicenseActivationDialog:
               font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x')
         self.key_entry = Entry(card, width=50, font=FONTS["body"], relief='solid', bd=1)
         self.key_entry.pack(fill='x', pady=(5, 8), ipady=5)
-        Label(card, text="例: FGIN-STD-3101-XXXX-XXXX-XXXX",
+        Label(card, text="例: FGIN-STD-2601-XXXX-XXXX-XXXX",
               fg=COLORS["text_muted"], font=FONTS["small"], bg=COLORS["surface"]).pack(anchor='w')
 
         # エラーメッセージ
@@ -1339,9 +1427,18 @@ class LicenseActivationDialog:
         self.result = True
         self.dialog.destroy()
 
-    def on_cancel(self):
-        # Free版で続行として扱う
-        self.on_continue_free()
+    def on_close(self):
+        """閉じるボタン"""
+        self.result = True
+        self.dialog.destroy()
+
+    def on_deactivate(self):
+        """ライセンス解除"""
+        if messagebox.askyesno("確認", "ライセンスを解除しますか？\n解除後はFree版として動作します。"):
+            self.license_manager.clear()
+            self.result = True  # UI更新が必要
+            self.dialog.destroy()
+            messagebox.showinfo("完了", "ライセンスが解除されました。")
 
     def show(self) -> bool:
         self.dialog.wait_window()
@@ -1354,7 +1451,7 @@ class ForguncyInsightApp:
     def __init__(self, root: Tk):
         self.root = root
         self.root.title(f"Forguncy Insight {VERSION_INFO}")
-        self.root.geometry("800x600")
+        self.root.geometry("800x780")
         self.root.resizable(True, True)
         self.root.configure(bg=COLORS["bg"])
 
@@ -1471,18 +1568,31 @@ class ForguncyInsightApp:
         Label(self.tab_analyze, text="Forguncyプロジェクト解析・仕様書自動生成",
               font=FONTS["heading"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w', pady=(0, 20))
 
-        # ファイル選択
-        file_frame = Frame(self.tab_analyze, bg=COLORS["surface"])
-        file_frame.pack(fill='x', pady=10)
-        Label(file_frame, text="プロジェクトファイル (.fgcp):",
-              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w')
-        file_input = Frame(file_frame, bg=COLORS["surface"])
-        file_input.pack(fill='x', pady=5)
-        Entry(file_input, textvariable=self.file_path, state='readonly',
-              font=FONTS["body"], relief='solid', bd=1).pack(side='left', fill='x', expand=True, ipady=4)
-        Button(file_input, text="参照...", command=self.browse_file,
-               font=FONTS["body"], bg=COLORS["primary"], fg='white',
-               relief='flat', padx=15, cursor='hand2').pack(side='right', padx=(10, 0))
+        # ドラッグ＆ドロップエリア
+        self.drop_frame = Frame(self.tab_analyze, bg=COLORS["border"], padx=2, pady=2)
+        self.drop_frame.pack(fill='x', pady=10)
+
+        self.drop_area = Frame(self.drop_frame, bg="#F1F5F9", height=100)
+        self.drop_area.pack(fill='both', expand=True)
+        self.drop_area.pack_propagate(False)
+
+        self.drop_label = Label(self.drop_area, text="📂 ここにファイルをドロップ\nまたはクリックして選択 (.fgcp)",
+                                 font=FONTS["body"], bg="#F1F5F9", fg=COLORS["text_secondary"],
+                                 cursor='hand2')
+        self.drop_label.pack(expand=True)
+
+        # ファイルパス表示
+        self.file_label = Label(self.tab_analyze, textvariable=self.file_path,
+                                 font=FONTS["small"], bg=COLORS["surface"], fg=COLORS["primary"],
+                                 wraplength=600)
+        self.file_label.pack(anchor='w', pady=(5, 0))
+
+        # クリックイベント
+        self.drop_area.bind('<Button-1>', lambda e: self.browse_file())
+        self.drop_label.bind('<Button-1>', lambda e: self.browse_file())
+
+        # ドラッグ＆ドロップ対応（tkinterdnd2があれば）
+        self._setup_dnd()
 
         # 出力フォルダ
         output_frame = Frame(self.tab_analyze, bg=COLORS["surface"])
@@ -1546,38 +1656,179 @@ class ForguncyInsightApp:
                    relief='flat', padx=20, cursor='hand2').pack()
             return
 
-        # ファイル1
+        # ファイル1（比較元）ドロップエリア
         Label(self.tab_diff, text="比較元ファイル (旧バージョン):",
               font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w')
-        file1_frame = Frame(self.tab_diff, bg=COLORS["surface"])
-        file1_frame.pack(fill='x', pady=5)
-        Entry(file1_frame, textvariable=self.file_path,
-              font=FONTS["body"], relief='solid', bd=1).pack(side='left', fill='x', expand=True, ipady=4)
-        Button(file1_frame, text="参照...", command=self.browse_file,
-               font=FONTS["body"], bg=COLORS["bg"], fg=COLORS["text"],
-               relief='flat', padx=15, cursor='hand2').pack(side='right', padx=(10, 0))
 
-        # ファイル2
+        drop1_outer = Frame(self.tab_diff, bg=COLORS["border"], padx=2, pady=2)
+        drop1_outer.pack(fill='x', pady=5)
+
+        self.drop_area1 = Frame(drop1_outer, bg="#F1F5F9", height=70)
+        self.drop_area1.pack(fill='both', expand=True)
+        self.drop_area1.pack_propagate(False)
+
+        self.drop_label1 = Label(self.drop_area1, text="📂 ファイルをドロップまたはクリック (.fgcp)",
+                                  font=FONTS["body"], bg="#F1F5F9", fg=COLORS["text_secondary"],
+                                  cursor='hand2')
+        self.drop_label1.pack(expand=True)
+
+        self.drop_area1.bind('<Button-1>', lambda e: self._browse_diff_file(1))
+        self.drop_label1.bind('<Button-1>', lambda e: self._browse_diff_file(1))
+
+        # ファイル2（比較先）ドロップエリア
         Label(self.tab_diff, text="比較先ファイル (新バージョン):",
               font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w', pady=(15, 0))
-        file2_frame = Frame(self.tab_diff, bg=COLORS["surface"])
-        file2_frame.pack(fill='x', pady=5)
-        Entry(file2_frame, textvariable=self.file_path2,
-              font=FONTS["body"], relief='solid', bd=1).pack(side='left', fill='x', expand=True, ipady=4)
-        Button(file2_frame, text="参照...", command=self.browse_file2,
-               font=FONTS["body"], bg=COLORS["bg"], fg=COLORS["text"],
-               relief='flat', padx=15, cursor='hand2').pack(side='right', padx=(10, 0))
+
+        drop2_outer = Frame(self.tab_diff, bg=COLORS["border"], padx=2, pady=2)
+        drop2_outer.pack(fill='x', pady=5)
+
+        self.drop_area2 = Frame(drop2_outer, bg="#F1F5F9", height=70)
+        self.drop_area2.pack(fill='both', expand=True)
+        self.drop_area2.pack_propagate(False)
+
+        self.drop_label2 = Label(self.drop_area2, text="📂 ファイルをドロップまたはクリック (.fgcp)",
+                                  font=FONTS["body"], bg="#F1F5F9", fg=COLORS["text_secondary"],
+                                  cursor='hand2')
+        self.drop_label2.pack(expand=True)
+
+        self.drop_area2.bind('<Button-1>', lambda e: self._browse_diff_file(2))
+        self.drop_label2.bind('<Button-1>', lambda e: self._browse_diff_file(2))
 
         # 比較ボタン
         Button(self.tab_diff, text="差分を比較", command=self.compare_files,
                font=FONTS["heading"], bg=COLORS["success"], fg='white',
                padx=40, pady=12, relief='flat', cursor='hand2').pack(pady=30)
 
+        # 差分タブ用ドラッグ＆ドロップ設定
+        self._setup_diff_dnd()
+
+    def _setup_diff_dnd(self):
+        """差分タブのドラッグ＆ドロップを設定"""
+        if not DND_AVAILABLE:
+            return
+        try:
+            # ファイル1用
+            self.drop_area1.drop_target_register(DND_FILES)
+            self.drop_area1.dnd_bind('<<Drop>>', lambda e: self._on_diff_drop(e, 1))
+            self.drop_area1.dnd_bind('<<DragEnter>>', lambda e: self._on_diff_drag_enter(1))
+            self.drop_area1.dnd_bind('<<DragLeave>>', lambda e: self._on_diff_drag_leave(1))
+            # ファイル2用
+            self.drop_area2.drop_target_register(DND_FILES)
+            self.drop_area2.dnd_bind('<<Drop>>', lambda e: self._on_diff_drop(e, 2))
+            self.drop_area2.dnd_bind('<<DragEnter>>', lambda e: self._on_diff_drag_enter(2))
+            self.drop_area2.dnd_bind('<<DragLeave>>', lambda e: self._on_diff_drag_leave(2))
+        except Exception:
+            pass
+
+    def _on_diff_drop(self, event, file_num):
+        """差分タブでのファイルドロップ処理"""
+        path = event.data
+        if path.startswith('{') and path.endswith('}'):
+            path = path[1:-1]
+        if path.lower().endswith('.fgcp'):
+            if file_num == 1:
+                self.file_path.set(path)
+            else:
+                self.file_path2.set(path)
+            self._update_diff_drop_area(file_num)
+        self._on_diff_drag_leave(file_num)
+
+    def _on_diff_drag_enter(self, file_num):
+        """差分タブでのドラッグ中表示"""
+        area = self.drop_area1 if file_num == 1 else self.drop_area2
+        label = self.drop_label1 if file_num == 1 else self.drop_label2
+        area.configure(bg="#DBEAFE")
+        label.configure(bg="#DBEAFE", fg=COLORS["primary"])
+
+    def _on_diff_drag_leave(self, file_num):
+        """差分タブでのドラッグ離脱時表示"""
+        area = self.drop_area1 if file_num == 1 else self.drop_area2
+        label = self.drop_label1 if file_num == 1 else self.drop_label2
+        path = self.file_path.get() if file_num == 1 else self.file_path2.get()
+        if path:
+            area.configure(bg="#ECFDF5")
+            label.configure(bg="#ECFDF5", fg=COLORS["success"])
+        else:
+            area.configure(bg="#F1F5F9")
+            label.configure(bg="#F1F5F9", fg=COLORS["text_secondary"])
+
+    def _browse_diff_file(self, file_num):
+        """差分比較用ファイル選択"""
+        path = filedialog.askopenfilename(title="Forguncyプロジェクトを選択", filetypes=[("Forguncy Project", "*.fgcp")])
+        if path:
+            if file_num == 1:
+                self.file_path.set(path)
+                self._update_diff_drop_area(1)
+            else:
+                self.file_path2.set(path)
+                self._update_diff_drop_area(2)
+
+    def _update_diff_drop_area(self, file_num):
+        """差分用ドロップエリア表示更新"""
+        if file_num == 1:
+            path = self.file_path.get()
+            label = self.drop_label1
+            area = self.drop_area1
+        else:
+            path = self.file_path2.get()
+            label = self.drop_label2
+            area = self.drop_area2
+
+        if path:
+            filename = Path(path).name
+            label.configure(text=f"✓ {filename}", bg="#ECFDF5", fg=COLORS["success"])
+            area.configure(bg="#ECFDF5")
+
+    def _setup_dnd(self):
+        """ドラッグ＆ドロップを設定（tkinterdnd2が利用可能な場合）"""
+        if not DND_AVAILABLE:
+            return
+        try:
+            self.drop_area.drop_target_register(DND_FILES)
+            self.drop_area.dnd_bind('<<Drop>>', self._on_drop)
+            self.drop_area.dnd_bind('<<DragEnter>>', self._on_drag_enter)
+            self.drop_area.dnd_bind('<<DragLeave>>', self._on_drag_leave)
+        except Exception:
+            pass
+
+    def _on_drop(self, event):
+        """ファイルドロップ時の処理"""
+        path = event.data
+        # Windowsでは{}で囲まれている場合がある
+        if path.startswith('{') and path.endswith('}'):
+            path = path[1:-1]
+        if path.lower().endswith('.fgcp'):
+            self.file_path.set(path)
+            self._update_drop_area()
+        self._on_drag_leave(None)
+
+    def _on_drag_enter(self, event):
+        """ドラッグ中の表示"""
+        self.drop_area.configure(bg="#DBEAFE")
+        self.drop_label.configure(bg="#DBEAFE", fg=COLORS["primary"])
+
+    def _on_drag_leave(self, event):
+        """ドラッグ離脱時の表示"""
+        if self.file_path.get():
+            self.drop_area.configure(bg="#ECFDF5")
+            self.drop_label.configure(bg="#ECFDF5", fg=COLORS["success"])
+        else:
+            self.drop_area.configure(bg="#F1F5F9")
+            self.drop_label.configure(bg="#F1F5F9", fg=COLORS["text_secondary"])
+
+    def _update_drop_area(self):
+        """ファイル選択後のドロップエリア表示更新"""
+        if self.file_path.get():
+            filename = Path(self.file_path.get()).name
+            self.drop_label.configure(text=f"✓ {filename}\n（クリックで変更）",
+                                       bg="#ECFDF5", fg=COLORS["success"])
+            self.drop_area.configure(bg="#ECFDF5")
 
     def browse_file(self):
         path = filedialog.askopenfilename(title="Forguncyプロジェクトを選択", filetypes=[("Forguncy Project", "*.fgcp")])
         if path:
             self.file_path.set(path)
+            self._update_drop_area()
 
     def browse_file2(self):
         path = filedialog.askopenfilename(title="比較先プロジェクトを選択", filetypes=[("Forguncy Project", "*.fgcp")])
@@ -1723,7 +1974,11 @@ class ForguncyInsightApp:
 
 
 def main():
-    root = Tk()
+    # ドラッグ＆ドロップを有効にするためTkinterDnD.Tk()を使用
+    if DND_AVAILABLE:
+        root = TkinterDnD.Tk()
+    else:
+        root = Tk()
     app = ForguncyInsightApp(root)
     root.mainloop()
 
