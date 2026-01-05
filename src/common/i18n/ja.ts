@@ -31,9 +31,16 @@ export const ja = {
 
   // アプリケーション
   app: {
-    title: 'Forguncy Analyzer Pro',
-    subtitle: 'Forguncyプロジェクトを解析し、仕様書・レビューレポートを自動生成',
+    title: 'Forguncy Insight',
+    subtitle: 'Forguncyプロジェクトを解析し、仕様書を自動生成',
     footer: 'Powered by HarmonicInsight',
+  },
+
+  // タブ
+  tabs: {
+    generate: '仕様書生成',
+    projectContent: 'プロジェクト内容',
+    settings: '設定',
   },
 
   // ファイル選択
@@ -160,7 +167,7 @@ export const ja = {
   // 仕様書
   spec: {
     title: 'システム仕様書',
-    generatedBy: 'Forguncy Analyzer Pro により自動生成',
+    generatedBy: 'Forguncy Insight により自動生成',
     generatedAt: '生成日',
     toc: '目次',
     overview: 'システム概要',

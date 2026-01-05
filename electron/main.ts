@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
 import * as path from 'path';
 import { analyzeProject } from './ipc/analyzer';
 import { reviewProject } from './ipc/reviewer';
@@ -23,7 +23,7 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
     },
     icon: path.join(__dirname, '../assets/icon.png'),
-    title: 'Forguncy Analyzer Pro',
+    title: 'Forguncy Insight',
   });
 
   if (isDev) {
@@ -31,6 +31,10 @@ function createWindow(): void {
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    // 本番環境ではDevToolsを無効化
+    mainWindow.webContents.on('devtools-opened', () => {
+      mainWindow?.webContents.closeDevTools();
+    });
   }
 
   mainWindow.on('closed', () => {
@@ -39,6 +43,9 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // メニューバーを非表示（シンプルなUIのため）
+  Menu.setApplicationMenu(null);
+
   createWindow();
 
   app.on('activate', () => {

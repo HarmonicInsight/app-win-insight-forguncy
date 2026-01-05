@@ -154,7 +154,7 @@ export async function generateSpecDocument(
             alignment: AlignmentType.CENTER,
             children: [
               new TextRun({
-                text: 'Forguncy Analyzer Pro により自動生成',
+                text: 'Forguncy Insight により自動生成',
                 size: 20,
                 italics: true,
                 color: '888888',

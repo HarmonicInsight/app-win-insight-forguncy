@@ -1,8 +1,8 @@
 {
-  "name": "forguncy-analyzer-pro",
-  "productName": "Forguncy Analyzer Pro",
+  "name": "forguncy-insight",
+  "productName": "Forguncy Insight",
   "version": "1.0.0",
-  "description": "Forguncyプロジェクトファイル(.fgcp)を解析し、仕様書・レビューレポートを自動生成するツール",
+  "description": "Forguncyプロジェクトファイル(.fgcp)を解析し、仕様書を自動生成するツール",
   "main": "dist/electron/main.js",
   "author": "HarmonicInsight",
   "license": "MIT",
@@ -20,7 +20,8 @@
   "dependencies": {
     "adm-zip": "^0.5.10",
     "docx": "^8.5.0",
-    "electron-store": "^8.1.0"
+    "electron-store": "^8.1.0",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.5",
@@ -41,8 +42,8 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.harmonicinsight.forguncy-analyzer-pro",
-    "productName": "Forguncy Analyzer Pro",
+    "appId": "com.harmonicinsight.forguncy-insight",
+    "productName": "Forguncy Insight",
     "directories": {
       "output": "release"
     },
@@ -53,16 +54,20 @@
     "win": {
       "target": [
         {
-          "target": "nsis",
-          "arch": ["x64"]
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
         }
       ],
-      "icon": "assets/icon.ico"
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerLanguages": ["ja"],
+      "installerLanguages": [
+        "ja"
+      ],
       "language": "1041"
     }
   }

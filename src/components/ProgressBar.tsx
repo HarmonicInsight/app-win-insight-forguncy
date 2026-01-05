@@ -1,4 +1,4 @@
-import { useI18n } from '../hooks/useI18n';
+import { useI18n } from '../contexts/I18nContext';
 
 interface Props {
   progress: number;
@@ -9,20 +9,20 @@ export default function ProgressBar({ progress, message }: Props) {
   const { t } = useI18n();
 
   return (
-    <div className="mt-6 animate-fadeIn">
+    <div className="mt-6 animate-fade-in">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium text-gray-700">{message}</span>
-        <span className="text-sm font-medium text-indigo-600">{progress}%</span>
+        <span className="text-sm text-content-secondary">{message}</span>
+        <span className="text-sm font-medium text-accent">{progress}%</span>
       </div>
-      <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+      <div className="w-full bg-surface-tertiary rounded-full h-2 overflow-hidden">
         <div
-          className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-300 ease-out"
+          className="h-full bg-accent rounded-full transition-all duration-300 ease-out"
           style={{ width: `${progress}%` }}
         />
       </div>
-      <div className="mt-2 flex items-center justify-center text-gray-500 text-sm">
+      <div className="mt-3 flex items-center justify-center text-content-muted text-sm">
         <svg
-          className="animate-spin mr-2 h-4 w-4 text-indigo-500"
+          className="animate-spin mr-2 h-4 w-4 text-accent"
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
           viewBox="0 0 24 24"
