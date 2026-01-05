@@ -23,7 +23,7 @@ from core.logging_setup import logger, get_log_dir
 from core.safety_checks import ZipSafetyError, check_zip_safety
 from core.models import AnalysisEvent
 from core.fgcp_parser import analyze_project, compare_projects
-from core.exporters import generate_spec_document, generate_excel_document, EXCEL_AVAILABLE
+from core.exporters import generate_spec_document, generate_excel_document, generate_diff_excel, EXCEL_AVAILABLE
 from licensing.verify import (
     LicenseManager, PRODUCT_NAME, PRODUCT_CODE,
     PURCHASE_URL, TRIAL_URL, PRICE_STANDARD
@@ -925,55 +925,133 @@ class ForguncyInsightApp:
             new_analysis = analyze_project(self.file_path2.get(), limits=self.license_manager.limits)
             diff = compare_projects(old_analysis, new_analysis)
 
+            # 差分データを保存（Excel出力用）
+            self._last_diff = diff
+            self._last_diff_old_name = old_analysis.project_name
+            self._last_diff_new_name = new_analysis.project_name
+
             # 結果表示ウィンドウ
             diff_window = Toplevel(self.root)
             diff_window.title("差分比較結果")
-            diff_window.geometry("600x500")
+            diff_window.geometry("700x600")
 
-            text = Text(diff_window, wrap=WORD, padx=10, pady=10)
-            scrollbar = Scrollbar(diff_window, command=text.yview)
+            # ボタンフレーム
+            btn_frame = Frame(diff_window, bg=COLORS["bg"], padx=10, pady=10)
+            btn_frame.pack(fill='x')
+
+            Button(btn_frame, text="Excelに出力", command=self._export_diff_excel,
+                   font=FONTS["body"], bg=COLORS["success"], fg='white',
+                   padx=20, pady=5, relief='flat', cursor='hand2').pack(side='left')
+
+            # テキストエリア
+            text_frame = Frame(diff_window)
+            text_frame.pack(fill=BOTH, expand=True, padx=10, pady=(0, 10))
+
+            text = Text(text_frame, wrap=WORD, padx=10, pady=10, font=("Consolas", 10))
+            scrollbar = Scrollbar(text_frame, command=text.yview)
             text.configure(yscrollcommand=scrollbar.set)
             scrollbar.pack(side=RIGHT, fill=Y)
-            text.pack(fill=BOTH, expand=True)
+            text.pack(side=LEFT, fill=BOTH, expand=True)
 
-            text.insert(END, f"=== 差分比較結果 ===\n\n")
+            # タグ設定（色分け）
+            text.tag_configure('header', font=("Yu Gothic UI", 12, "bold"))
+            text.tag_configure('added', foreground='#006100')
+            text.tag_configure('removed', foreground='#9C0006')
+            text.tag_configure('modified', foreground='#9C6500')
+
+            text.insert(END, f"=== 差分比較結果 ===\n\n", 'header')
             text.insert(END, f"比較元: {old_analysis.project_name}\n")
             text.insert(END, f"比較先: {new_analysis.project_name}\n\n")
 
-            text.insert(END, f"--- テーブル ---\n")
+            # テーブル
+            text.insert(END, f"--- テーブル ---\n", 'header')
             text.insert(END, f"追加: {len(diff.added_tables)}件\n")
             for t in diff.added_tables:
-                text.insert(END, f"  + {t.name}\n")
+                text.insert(END, f"  + {t.name} (カラム: {len(t.columns)})\n", 'added')
             text.insert(END, f"削除: {len(diff.removed_tables)}件\n")
             for t in diff.removed_tables:
-                text.insert(END, f"  - {t.name}\n")
+                text.insert(END, f"  - {t.name} (カラム: {len(t.columns)})\n", 'removed')
             text.insert(END, f"変更: {len(diff.modified_tables)}件\n")
             for m in diff.modified_tables:
-                text.insert(END, f"  * {m['name']}\n")
+                details = []
+                if m.get('added_columns'):
+                    details.append(f"+{len(m['added_columns'])}カラム")
+                if m.get('removed_columns'):
+                    details.append(f"-{len(m['removed_columns'])}カラム")
+                if m.get('modified_columns'):
+                    details.append(f"変更{len(m['modified_columns'])}カラム")
+                detail_str = f" ({', '.join(details)})" if details else ""
+                text.insert(END, f"  * {m['name']}{detail_str}\n", 'modified')
 
-            text.insert(END, f"\n--- ページ ---\n")
+            # ページ
+            text.insert(END, f"\n--- ページ ---\n", 'header')
             text.insert(END, f"追加: {len(diff.added_pages)}件\n")
             for p in diff.added_pages:
-                text.insert(END, f"  + {p.name}\n")
+                text.insert(END, f"  + {p.name}\n", 'added')
             text.insert(END, f"削除: {len(diff.removed_pages)}件\n")
             for p in diff.removed_pages:
-                text.insert(END, f"  - {p.name}\n")
+                text.insert(END, f"  - {p.name}\n", 'removed')
+            modified_pages = getattr(diff, 'modified_pages', [])
+            if modified_pages:
+                text.insert(END, f"変更: {len(modified_pages)}件\n")
+                for m in modified_pages:
+                    details = []
+                    if m.get('added_buttons'):
+                        details.append(f"+{len(m['added_buttons'])}ボタン")
+                    if m.get('removed_buttons'):
+                        details.append(f"-{len(m['removed_buttons'])}ボタン")
+                    detail_str = f" ({', '.join(details)})" if details else ""
+                    text.insert(END, f"  * {m['name']}{detail_str}\n", 'modified')
 
-            text.insert(END, f"\n--- サーバーコマンド ---\n")
+            # サーバーコマンド
+            text.insert(END, f"\n--- サーバーコマンド ---\n", 'header')
             text.insert(END, f"追加: {len(diff.added_server_commands)}件\n")
             for c in diff.added_server_commands:
-                text.insert(END, f"  + {c.name}\n")
+                text.insert(END, f"  + {c.name}\n", 'added')
             text.insert(END, f"削除: {len(diff.removed_server_commands)}件\n")
             for c in diff.removed_server_commands:
-                text.insert(END, f"  - {c.name}\n")
+                text.insert(END, f"  - {c.name}\n", 'removed')
             text.insert(END, f"変更: {len(diff.modified_server_commands)}件\n")
             for m in diff.modified_server_commands:
-                text.insert(END, f"  * {m['name']}\n")
+                details = []
+                if m.get('added_parameters'):
+                    details.append(f"+{len(m['added_parameters'])}パラメータ")
+                if m.get('removed_parameters'):
+                    details.append(f"-{len(m['removed_parameters'])}パラメータ")
+                if m.get('commands_changed'):
+                    details.append("処理変更")
+                detail_str = f" ({', '.join(details)})" if details else ""
+                text.insert(END, f"  * {m['name']}{detail_str}\n", 'modified')
 
             text.config(state='disabled')
 
         except Exception as e:
             messagebox.showerror("エラー", f"比較中にエラーが発生しました:\n{str(e)}")
+
+    def _export_diff_excel(self):
+        """差分結果をExcelに出力"""
+        if not hasattr(self, '_last_diff'):
+            messagebox.showerror("エラー", "差分比較を先に実行してください")
+            return
+
+        try:
+            output_dir = self.output_dir.get()
+            file_path = generate_diff_excel(
+                self._last_diff,
+                self._last_diff_old_name,
+                self._last_diff_new_name,
+                output_dir
+            )
+            messagebox.showinfo("完了", f"差分レポートを出力しました:\n{file_path}")
+
+            # ファイルを開く（Windows）
+            if os.name == 'nt':
+                try:
+                    os.startfile(file_path)
+                except Exception:
+                    pass
+        except Exception as e:
+            messagebox.showerror("エラー", f"Excel出力に失敗しました:\n{str(e)}")
 
 
     def refresh_ui(self):

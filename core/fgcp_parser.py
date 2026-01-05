@@ -529,7 +529,7 @@ def analyze_server_commands(zf: zipfile.ZipFile, entries: list, max_count: int =
 # 差分比較
 # =============================================================================
 def compare_projects(old_analysis: AnalysisResult, new_analysis: AnalysisResult) -> DiffResult:
-    """2つのプロジェクトを比較"""
+    """2つのプロジェクトを比較（詳細な差分情報付き）"""
     diff = DiffResult()
 
     # テーブル比較
@@ -543,13 +543,97 @@ def compare_projects(old_analysis: AnalysisResult, new_analysis: AnalysisResult)
         old_t, new_t = old_tables[name], new_tables[name]
         old_cols = {c.name: c for c in old_t.columns}
         new_cols = {c.name: c for c in new_t.columns}
-        if old_cols != new_cols or len(old_t.relations) != len(new_t.relations):
-            diff.modified_tables.append({'name': name, 'old': old_t, 'new': new_t})
 
-    # ページ比較
-    old_pages = {p.name for p in old_analysis.pages}
-    new_pages = {p.name for p in new_analysis.pages}
-    diff.added_pages = [p for p in new_analysis.pages if p.name not in old_pages]
-    diff.removed_pages = [p for p in old_analysis.pages if p.name not in new_pages]
+        # 詳細なカラム変更を検出
+        added_cols = [c for c in new_t.columns if c.name not in old_cols]
+        removed_cols = [c for c in old_t.columns if c.name not in new_cols]
+        modified_cols = []
+        for col_name in set(old_cols.keys()) & set(new_cols.keys()):
+            old_c, new_c = old_cols[col_name], new_cols[col_name]
+            changes = []
+            if old_c.type != new_c.type:
+                changes.append(f"型: {old_c.type} → {new_c.type}")
+            if old_c.required != new_c.required:
+                changes.append(f"必須: {old_c.required} → {new_c.required}")
+            if old_c.default_value != new_c.default_value:
+                changes.append(f"デフォルト: {old_c.default_value} → {new_c.default_value}")
+            if changes:
+                modified_cols.append({'name': col_name, 'changes': changes})
+
+        if added_cols or removed_cols or modified_cols:
+            diff.modified_tables.append({
+                'name': name,
+                'old': old_t,
+                'new': new_t,
+                'added_columns': added_cols,
+                'removed_columns': removed_cols,
+                'modified_columns': modified_cols,
+            })
+
+    # ページ比較（詳細）
+    old_pages = {p.name: p for p in old_analysis.pages}
+    new_pages = {p.name: p for p in new_analysis.pages}
+
+    diff.added_pages = [p for name, p in new_pages.items() if name not in old_pages]
+    diff.removed_pages = [p for name, p in old_pages.items() if name not in new_pages]
+
+    # ページ変更の詳細検出
+    diff.modified_pages = []
+    for name in set(old_pages.keys()) & set(new_pages.keys()):
+        old_p, new_p = old_pages[name], new_pages[name]
+        changes = []
+
+        # ボタン変更
+        old_btns = {b.name or f"btn_{i}": b for i, b in enumerate(old_p.buttons)}
+        new_btns = {b.name or f"btn_{i}": b for i, b in enumerate(new_p.buttons)}
+        added_btns = [b for n, b in new_btns.items() if n not in old_btns]
+        removed_btns = [b for n, b in old_btns.items() if n not in new_btns]
+
+        # 数式変更
+        old_formulas = set(f.formula for f in old_p.formulas)
+        new_formulas = set(f.formula for f in new_p.formulas)
+        added_formulas = new_formulas - old_formulas
+        removed_formulas = old_formulas - new_formulas
+
+        if added_btns or removed_btns or added_formulas or removed_formulas:
+            diff.modified_pages.append({
+                'name': name,
+                'old': old_p,
+                'new': new_p,
+                'added_buttons': added_btns,
+                'removed_buttons': removed_btns,
+                'added_formulas': list(added_formulas),
+                'removed_formulas': list(removed_formulas),
+            })
+
+    # サーバーコマンド比較（詳細）
+    old_cmds = {c.name: c for c in old_analysis.server_commands}
+    new_cmds = {c.name: c for c in new_analysis.server_commands}
+
+    diff.added_server_commands = [c for name, c in new_cmds.items() if name not in old_cmds]
+    diff.removed_server_commands = [c for name, c in old_cmds.items() if name not in new_cmds]
+
+    for name in set(old_cmds.keys()) & set(new_cmds.keys()):
+        old_c, new_c = old_cmds[name], new_cmds[name]
+
+        # パラメータ変更
+        old_params = {p.name: p for p in old_c.parameters}
+        new_params = {p.name: p for p in new_c.parameters}
+        added_params = [p for n, p in new_params.items() if n not in old_params]
+        removed_params = [p for n, p in old_params.items() if n not in new_params]
+
+        # コマンド内容変更
+        old_cmd_set = set(c.description if hasattr(c, 'description') else str(c) for c in old_c.commands)
+        new_cmd_set = set(c.description if hasattr(c, 'description') else str(c) for c in new_c.commands)
+
+        if added_params or removed_params or old_cmd_set != new_cmd_set:
+            diff.modified_server_commands.append({
+                'name': name,
+                'old': old_c,
+                'new': new_c,
+                'added_parameters': added_params,
+                'removed_parameters': removed_params,
+                'commands_changed': old_cmd_set != new_cmd_set,
+            })
 
     return diff
