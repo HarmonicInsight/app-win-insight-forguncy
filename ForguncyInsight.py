@@ -1168,6 +1168,8 @@ def register_dnd(widget, on_select_path, highlight_bg='#E0F2FE', normal_bg=None)
         try:
             # Parse the dropped file path(s)
             # event.data contains paths like: {C:/path with space/file.fgcp} or C:/simple/path.fgcp
+            # widget.tk.splitlist() is the correct Tcl/Tk method to parse these paths
+            # It properly handles bracketed paths (with spaces) and non-bracketed paths
             files = widget.tk.splitlist(event.data)
             
             if not files:
@@ -1223,9 +1225,9 @@ def register_dnd(widget, on_select_path, highlight_bg='#E0F2FE', normal_bg=None)
         widget.dnd_bind('<<Drop>>', on_drop)
         widget.dnd_bind('<<DragEnter>>', on_drag_enter)
         widget.dnd_bind('<<DragLeave>>', on_drag_leave)
-    except Exception as e:
+    except Exception:
         # Silently fail if DnD binding doesn't work
-        print(f"Warning: Failed to register DnD for widget: {e}")
+        pass
 
 
 # =============================================================================
