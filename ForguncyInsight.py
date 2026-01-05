@@ -1233,8 +1233,8 @@ class LicenseActivationDialog:
         self.result = False
 
         self.dialog = Toplevel(parent)
-        self.dialog.title("ライセンス認証")
-        self.dialog.geometry("500x480")
+        self.dialog.title("ライセンス管理")
+        self.dialog.geometry("500x520")
         self.dialog.resizable(False, False)
         self.dialog.transient(parent)
         self.dialog.grab_set()
@@ -1243,16 +1243,100 @@ class LicenseActivationDialog:
         # ダイアログを中央に配置
         self.dialog.update_idletasks()
         x = (self.dialog.winfo_screenwidth() - 500) // 2
-        y = (self.dialog.winfo_screenheight() - 480) // 2
-        self.dialog.geometry(f"500x480+{x}+{y}")
+        y = (self.dialog.winfo_screenheight() - 520) // 2
+        self.dialog.geometry(f"500x520+{x}+{y}")
 
-        self.setup_ui()
+        # アクティベート状態に応じてUIを切り替え
+        if self.license_manager.is_activated:
+            self.setup_status_ui()
+        else:
+            self.setup_activate_ui()
 
         # 閉じるボタンの処理
-        self.dialog.protocol("WM_DELETE_WINDOW", self.on_cancel)
+        self.dialog.protocol("WM_DELETE_WINDOW", self.on_close)
 
-    def setup_ui(self):
-        # メインカード
+    def setup_status_ui(self):
+        """アクティベート済みの場合：ステータス表示UI"""
+        card = Frame(self.dialog, bg=COLORS["surface"], padx=40, pady=30)
+        card.pack(fill='both', expand=True, padx=20, pady=20)
+
+        # タイトル
+        Label(card, text=PRODUCT_NAME, font=FONTS["title"],
+              bg=COLORS["surface"], fg=COLORS["primary"]).pack(pady=(0, 5))
+        Label(card, text="ライセンス情報", font=FONTS["heading"],
+              bg=COLORS["surface"], fg=COLORS["text_secondary"]).pack(pady=(0, 25))
+
+        # ステータスカード
+        status_frame = Frame(card, bg="#ECFDF5", padx=20, pady=15)
+        status_frame.pack(fill='x', pady=10)
+
+        Label(status_frame, text="✓ ライセンス有効", font=FONTS["heading"],
+              bg="#ECFDF5", fg=COLORS["success"]).pack(anchor='w')
+
+        # ライセンス詳細
+        info_frame = Frame(card, bg=COLORS["bg"], padx=20, pady=15)
+        info_frame.pack(fill='x', pady=10)
+
+        details = [
+            ("プラン", self.license_manager.tier_name),
+            ("メールアドレス", self.license_manager.email or "-"),
+            ("有効期限", self.license_manager.expires_at.strftime('%Y年%m月%d日') if self.license_manager.expires_at else "-"),
+        ]
+
+        # 残り日数
+        days = self.license_manager.days_until_expiry
+        if days is not None:
+            if days <= 30:
+                details.append(("残り日数", f"{days}日 ⚠️"))
+            else:
+                details.append(("残り日数", f"{days}日"))
+
+        for label_text, value in details:
+            row = Frame(info_frame, bg=COLORS["bg"])
+            row.pack(fill='x', pady=3)
+            Label(row, text=f"{label_text}:", font=FONTS["body"],
+                  bg=COLORS["bg"], fg=COLORS["text_secondary"], width=15, anchor='w').pack(side='left')
+            Label(row, text=value, font=FONTS["body"],
+                  bg=COLORS["bg"], fg=COLORS["text"]).pack(side='left')
+
+        # ライセンスキー（マスク表示）
+        if self.license_manager.license_key:
+            key = self.license_manager.license_key
+            masked_key = key[:9] + "****-****-****"
+            row = Frame(info_frame, bg=COLORS["bg"])
+            row.pack(fill='x', pady=3)
+            Label(row, text="ライセンスキー:", font=FONTS["body"],
+                  bg=COLORS["bg"], fg=COLORS["text_secondary"], width=15, anchor='w').pack(side='left')
+            Label(row, text=masked_key, font=FONTS["small"],
+                  bg=COLORS["bg"], fg=COLORS["text_muted"]).pack(side='left')
+
+        # 期限警告
+        if self.license_manager.is_expiring_soon:
+            warning_frame = Frame(card, bg="#FEF3C7", padx=15, pady=10)
+            warning_frame.pack(fill='x', pady=10)
+            Label(warning_frame, text=f"⚠️ {self.license_manager.expiry_warning_message}",
+                  font=FONTS["small"], bg="#FEF3C7", fg="#92400E", wraplength=380).pack()
+
+        # ボタンフレーム
+        btn_frame = Frame(card, bg=COLORS["surface"])
+        btn_frame.pack(pady=20)
+
+        Button(btn_frame, text="閉じる", command=self.on_close,
+               bg=COLORS["primary"], fg='white', font=FONTS["body"],
+               padx=25, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=5)
+        Button(btn_frame, text="ライセンス解除", command=self.on_deactivate,
+               bg=COLORS["bg"], fg=COLORS["danger"], font=FONTS["body"],
+               padx=15, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=5)
+
+        # 更新リンク
+        if self.license_manager.is_expiring_soon:
+            renew_link = Label(card, text="ライセンスを更新する", fg=COLORS["primary"],
+                               cursor='hand2', font=FONTS["body"], bg=COLORS["surface"])
+            renew_link.pack(pady=5)
+            renew_link.bind('<Button-1>', lambda e: webbrowser.open(PURCHASE_URL))
+
+    def setup_activate_ui(self):
+        """未アクティベートの場合：認証UI"""
         card = Frame(self.dialog, bg=COLORS["surface"], padx=40, pady=30)
         card.pack(fill='both', expand=True, padx=20, pady=20)
 
@@ -1278,7 +1362,7 @@ class LicenseActivationDialog:
               font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x')
         self.key_entry = Entry(card, width=50, font=FONTS["body"], relief='solid', bd=1)
         self.key_entry.pack(fill='x', pady=(5, 8), ipady=5)
-        Label(card, text="例: FGIN-STD-3101-XXXX-XXXX-XXXX",
+        Label(card, text="例: FGIN-STD-2601-XXXX-XXXX-XXXX",
               fg=COLORS["text_muted"], font=FONTS["small"], bg=COLORS["surface"]).pack(anchor='w')
 
         # エラーメッセージ
@@ -1343,9 +1427,18 @@ class LicenseActivationDialog:
         self.result = True
         self.dialog.destroy()
 
-    def on_cancel(self):
-        # Free版で続行として扱う
-        self.on_continue_free()
+    def on_close(self):
+        """閉じるボタン"""
+        self.result = True
+        self.dialog.destroy()
+
+    def on_deactivate(self):
+        """ライセンス解除"""
+        if messagebox.askyesno("確認", "ライセンスを解除しますか？\n解除後はFree版として動作します。"):
+            self.license_manager.clear()
+            self.result = True  # UI更新が必要
+            self.dialog.destroy()
+            messagebox.showinfo("完了", "ライセンスが解除されました。")
 
     def show(self) -> bool:
         self.dialog.wait_window()
