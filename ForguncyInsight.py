@@ -704,17 +704,21 @@ def analyze_project(file_path: str, progress_callback=None, limits=None) -> Anal
         entries = zf.namelist()
 
         send_progress(15, 'テーブル定義を解析しています...')
-        tables = analyze_tables(zf, entries, int(limits.get('max_tables', 5)))
+        max_tables = limits.get('max_tables', 5)
+        tables = analyze_tables(zf, entries, 999999 if max_tables == float('inf') else int(max_tables))
 
         send_progress(25, 'ページ定義を解析しています...')
-        pages = analyze_pages(zf, entries, int(limits.get('max_pages', 10)))
+        max_pages = limits.get('max_pages', 10)
+        pages = analyze_pages(zf, entries, 999999 if max_pages == float('inf') else int(max_pages))
 
         send_progress(35, 'ワークフローを解析しています...')
-        max_wf = int(limits.get('max_workflows', 1))
+        max_wf = limits.get('max_workflows', 1)
+        max_wf = 999999 if max_wf == float('inf') else int(max_wf)
         workflows = [t.workflow for t in tables if t.workflow][:max_wf]
 
         send_progress(45, 'サーバーコマンドを解析しています...')
-        server_commands = analyze_server_commands(zf, entries, int(limits.get('max_server_commands', 3)))
+        max_cmds = limits.get('max_server_commands', 3)
+        server_commands = analyze_server_commands(zf, entries, 999999 if max_cmds == float('inf') else int(max_cmds))
 
     summary = AnalysisSummary(
         table_count=len(tables),
@@ -1354,7 +1358,7 @@ class ForguncyInsightApp:
     def __init__(self, root: Tk):
         self.root = root
         self.root.title(f"Forguncy Insight {VERSION_INFO}")
-        self.root.geometry("800x600")
+        self.root.geometry("800x720")
         self.root.resizable(True, True)
         self.root.configure(bg=COLORS["bg"])
 
