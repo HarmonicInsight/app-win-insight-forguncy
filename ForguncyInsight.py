@@ -1234,7 +1234,7 @@ class LicenseActivationDialog:
 
         self.dialog = Toplevel(parent)
         self.dialog.title("ライセンス管理")
-        self.dialog.geometry("500x520")
+        self.dialog.geometry("500x580")
         self.dialog.resizable(False, False)
         self.dialog.transient(parent)
         self.dialog.grab_set()
@@ -1243,8 +1243,8 @@ class LicenseActivationDialog:
         # ダイアログを中央に配置
         self.dialog.update_idletasks()
         x = (self.dialog.winfo_screenwidth() - 500) // 2
-        y = (self.dialog.winfo_screenheight() - 520) // 2
-        self.dialog.geometry(f"500x520+{x}+{y}")
+        y = (self.dialog.winfo_screenheight() - 580) // 2
+        self.dialog.geometry(f"500x580+{x}+{y}")
 
         # アクティベート状態に応じてUIを切り替え
         if self.license_manager.is_activated:
