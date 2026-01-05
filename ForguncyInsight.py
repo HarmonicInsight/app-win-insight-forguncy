@@ -26,6 +26,13 @@ from tkinter import LEFT, RIGHT, BOTH, END, X, Y, W, E, N, S, VERTICAL, HORIZONT
 from typing import Any, Optional, Dict, List, Tuple
 import webbrowser
 
+# ドラッグ＆ドロップサポート
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES
+    DND_AVAILABLE = True
+except ImportError:
+    DND_AVAILABLE = False
+
 # python-docx
 from docx import Document
 from docx.shared import Inches, Pt, Cm, RGBColor
@@ -45,14 +52,18 @@ except ImportError:
 
 
 # =============================================================================
-# ライセンス管理
+# ライセンス管理（新形式: PPPP-PLAN-YYMM-HASH-SIG1-SIG2）
 # =============================================================================
+import hmac
+import base64
 
+# ライセンスキー正規表現
+# 形式: PPPP-PLAN-YYMM-HASH-SIG1-SIG2
 LICENSE_KEY_PATTERN = re.compile(
-    r'^INS-(SALES|SLIDE|PY|INTV|FORG|FGIN|ALL)-(TRIAL|STD|PRO|ENT)-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{2})$'
+    r'^(INSS|INSP|INPY|FGIN)-(TRIAL|STD|PRO)-(\d{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})$'
 )
 
-PRODUCT_CODE = 'FGIN'  # Forguncy Insight (新コード)
+PRODUCT_CODE = 'FGIN'  # Forguncy Insight
 PRODUCT_NAME = 'Forguncy Insight'
 PRICE_STANDARD = '¥49,800/年'
 
@@ -62,6 +73,17 @@ TRIAL_URL = 'https://because-zero.com/forguncy-insight/trial'
 
 # 期限警告の日数
 EXPIRY_WARNING_DAYS = 30
+
+# トライアル期間（日）
+TRIAL_DAYS = 14
+
+# 署名用シークレットキー
+_SECRET_KEY = os.environ.get(
+    "INSIGHT_LICENSE_SECRET",
+    b"insight-series-license-secret-2026"
+)
+if isinstance(_SECRET_KEY, str):
+    _SECRET_KEY = _SECRET_KEY.encode()
 
 # 機能制限
 FEATURE_LIMITS = {
@@ -90,58 +112,89 @@ FEATURE_LIMITS = {
 TIER_NAMES = {
     'TRIAL': 'トライアル',
     'STD': 'Standard',
-    'PRO': 'Professional',
-    'ENT': 'Enterprise',
+    'PRO': 'Pro',
 }
 
 
-def calculate_checksum(base_key: str) -> str:
-    """チェックサムを計算"""
-    total = sum(ord(c) * (i + 1) for i, c in enumerate(base_key))
-    checksum = total % 1296
-    chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    return chars[checksum // 36] + chars[checksum % 36]
+def _generate_email_hash(email: str) -> str:
+    """メールアドレスから4文字のハッシュを生成"""
+    h = hashlib.sha256(email.lower().strip().encode()).digest()
+    return base64.b32encode(h)[:4].decode().upper()
 
 
-def validate_license_key(license_key: str, stored_expires_at: Optional[datetime] = None) -> Dict:
-    """ライセンスキーを検証"""
+def _generate_signature(data: str) -> str:
+    """署名を生成（8文字）"""
+    sig = hmac.new(_SECRET_KEY, data.encode(), hashlib.sha256).digest()
+    encoded = base64.b32encode(sig)[:8].decode().upper()
+    return encoded
+
+
+def _verify_signature(data: str, signature: str) -> bool:
+    """署名を検証"""
+    expected = _generate_signature(data)
+    return hmac.compare_digest(expected, signature)
+
+
+def validate_license_key(license_key: str, email: str) -> Dict:
+    """
+    ライセンスキーを検証（新形式）
+    形式: PPPP-PLAN-YYMM-HASH-SIG1-SIG2
+    """
     if not license_key:
         return {'is_valid': False, 'error': 'ライセンスキーが必要です', 'tier': None}
 
+    if not email:
+        return {'is_valid': False, 'error': 'メールアドレスが必要です', 'tier': None}
+
     normalized = license_key.strip().upper()
+    email = email.strip().lower()
     match = LICENSE_KEY_PATTERN.match(normalized)
 
     if not match:
         return {'is_valid': False, 'error': '無効なライセンスキー形式です', 'tier': None}
 
-    product, tier, part1, part2, provided_checksum = match.groups()
+    product_code, tier, yymm, email_hash, sig1, sig2 = match.groups()
+    signature = sig1 + sig2
 
-    # チェックサム検証
-    base_key = f'INS-{product}-{tier}-{part1}-{part2}'
-    expected_checksum = calculate_checksum(base_key)
+    # 署名検証
+    sign_data = f"{product_code}-{tier}-{yymm}-{email_hash}"
+    if not _verify_signature(sign_data, signature):
+        return {'is_valid': False, 'error': 'ライセンスキーが無効です', 'tier': None}
 
-    if provided_checksum != expected_checksum:
-        return {'is_valid': False, 'error': 'チェックサムが無効です', 'tier': None}
+    # メールハッシュ照合
+    expected_hash = _generate_email_hash(email)
+    if email_hash != expected_hash:
+        return {'is_valid': False, 'error': 'メールアドレスが一致しません', 'tier': None}
+
+    # 有効期限チェック
+    try:
+        year = 2000 + int(yymm[:2])
+        month = int(yymm[2:])
+        # 月末日を有効期限とする
+        if month == 12:
+            expires_at = datetime(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            expires_at = datetime(year, month + 1, 1) - timedelta(days=1)
+        expires_at = expires_at.replace(hour=23, minute=59, second=59)
+    except ValueError:
+        return {'is_valid': False, 'error': '無効な有効期限です', 'tier': None}
+
+    if datetime.now() > expires_at:
+        return {
+            'is_valid': False,
+            'error': 'ライセンスの有効期限が切れています',
+            'tier': tier,
+            'expires_at': expires_at
+        }
 
     # 製品コードチェック
-    if product != PRODUCT_CODE and product != 'ALL':
-        return {'is_valid': False, 'error': 'この製品用のライセンスではありません', 'tier': None}
-
-    # 期限チェック
-    expires_at = stored_expires_at
-    if tier != 'ENT' and expires_at:
-        if expires_at < datetime.now():
-            return {
-                'is_valid': False,
-                'error': 'ライセンスの有効期限が切れています',
-                'tier': tier,
-                'expires_at': expires_at
-            }
+    if product_code != PRODUCT_CODE:
+        return {'is_valid': False, 'error': f'このライセンスは {product_code} 用です', 'tier': None}
 
     return {
         'is_valid': True,
         'tier': tier,
-        'product': product,
+        'product': product_code,
         'expires_at': expires_at,
         'error': None
     }
@@ -149,86 +202,100 @@ def validate_license_key(license_key: str, stored_expires_at: Optional[datetime]
 
 def get_feature_limits(tier: Optional[str]) -> Dict:
     """ティアに応じた機能制限を取得"""
-    if tier in ['STD', 'PRO', 'ENT']:
+    if tier in ['TRIAL', 'STD', 'PRO']:
         return FEATURE_LIMITS['STD']
     return FEATURE_LIMITS['FREE']
 
 
 class LicenseManager:
-    """ライセンス管理クラス"""
-    CONFIG_FILE = Path.home() / '.forguncy_insight_license.json'
+    """ライセンス管理クラス（新形式対応）"""
 
     def __init__(self):
+        self._config_dir = self._get_config_dir()
+        self._config_file = self._config_dir / 'license.dat'
         self.license_key = None
         self.email = None
         self.expires_at = None
         self.activated_at = None
-        self.license_info = None
+        self.tier = None
         self.limits = get_feature_limits(None)
         self.load()
 
+    def _get_config_dir(self) -> Path:
+        """設定ディレクトリを取得"""
+        if os.name == 'nt':  # Windows
+            base = Path(os.environ.get('APPDATA', Path.home()))
+        else:
+            base = Path.home() / '.config'
+        return base / 'HarmonicInsight' / 'ForguncyInsight'
+
     def load(self):
         """保存されたライセンス情報を読み込み"""
-        if self.CONFIG_FILE.exists():
-            try:
-                with open(self.CONFIG_FILE, 'r') as f:
-                    data = json.load(f)
-                    self.license_key = data.get('license_key')
-                    self.email = data.get('email')
-                    expires_str = data.get('expires_at')
-                    activated_str = data.get('activated_at')
-                    if expires_str:
-                        self.expires_at = datetime.fromisoformat(expires_str)
-                    if activated_str:
-                        self.activated_at = datetime.fromisoformat(activated_str)
-                    self.validate()
-            except Exception:
-                pass
+        if not self._config_file.exists():
+            return
+
+        try:
+            with open(self._config_file, 'r', encoding='utf-8') as f:
+                encoded = f.read()
+            content = base64.b64decode(encoded).decode()
+            data = json.loads(content)
+
+            self.license_key = data.get('key')
+            self.email = data.get('email')
+            self.tier = data.get('plan')
+            expires_str = data.get('expires')
+            if expires_str:
+                self.expires_at = datetime.strptime(expires_str, '%Y-%m-%d')
+                self.expires_at = self.expires_at.replace(hour=23, minute=59, second=59)
+
+            # 期限チェック
+            if self.expires_at and datetime.now() > self.expires_at:
+                self.tier = None
+                self.limits = get_feature_limits(None)
+            else:
+                self.limits = get_feature_limits(self.tier)
+        except Exception:
+            pass
 
     def save(self):
         """ライセンス情報を保存"""
-        data = {
-            'license_key': self.license_key,
-            'email': self.email,
-            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
-            'activated_at': self.activated_at.isoformat() if self.activated_at else None
-        }
-        with open(self.CONFIG_FILE, 'w') as f:
-            json.dump(data, f, indent=2)
+        self._config_dir.mkdir(parents=True, exist_ok=True)
 
-    def activate(self, email: str, license_key: str, expires_at: Optional[datetime] = None) -> Dict:
+        data = {
+            'key': self.license_key,
+            'email': self.email,
+            'plan': self.tier,
+            'productCode': PRODUCT_CODE,
+            'product': PRODUCT_NAME,
+            'expires': self.expires_at.strftime('%Y-%m-%d') if self.expires_at else None,
+            'verifiedAt': datetime.now().isoformat()
+        }
+
+        content = json.dumps(data, ensure_ascii=False)
+        encoded = base64.b64encode(content.encode()).decode()
+
+        with open(self._config_file, 'w', encoding='utf-8') as f:
+            f.write(encoded)
+
+    def activate(self, email: str, license_key: str) -> Dict:
         """ライセンスをアクティベート"""
         # メールアドレスの検証
         if not email or '@' not in email:
             return {'is_valid': False, 'error': '有効なメールアドレスを入力してください', 'tier': None}
 
-        # 新規アクティベーション時のデフォルト期限（1年）
-        if not expires_at:
-            expires_at = datetime.now() + timedelta(days=365)
-
-        info = validate_license_key(license_key, expires_at)
+        # 新形式でバリデーション
+        info = validate_license_key(license_key, email)
 
         if info['is_valid']:
-            self.license_key = license_key
-            self.email = email
-            self.expires_at = expires_at
+            self.license_key = license_key.strip().upper()
+            self.email = email.strip().lower()
+            self.expires_at = info.get('expires_at')
             self.activated_at = datetime.now()
-            self.license_info = info
-            self.limits = get_feature_limits(info['tier'])
+            self.tier = info.get('tier')
+            self.limits = get_feature_limits(self.tier)
             self.save()
 
         return info
-
-    def validate(self) -> Dict:
-        """現在のライセンスを検証"""
-        if not self.license_key:
-            self.license_info = {'is_valid': False, 'tier': None}
-            self.limits = get_feature_limits(None)
-            return self.license_info
-
-        self.license_info = validate_license_key(self.license_key, self.expires_at)
-        self.limits = get_feature_limits(self.license_info.get('tier'))
-        return self.license_info
 
     def clear(self):
         """ライセンスをクリア"""
@@ -236,18 +303,14 @@ class LicenseManager:
         self.email = None
         self.expires_at = None
         self.activated_at = None
-        self.license_info = None
+        self.tier = None
         self.limits = get_feature_limits(None)
-        if self.CONFIG_FILE.exists():
-            self.CONFIG_FILE.unlink()
+        if self._config_file.exists():
+            self._config_file.unlink()
 
     @property
     def is_activated(self) -> bool:
-        return self.license_info and self.license_info.get('is_valid', False)
-
-    @property
-    def tier(self) -> Optional[str]:
-        return self.license_info.get('tier') if self.license_info else None
+        return self.tier is not None
 
     @property
     def tier_name(self) -> str:
@@ -1129,11 +1192,36 @@ def generate_er_mermaid(tables: list) -> str:
 
 
 # =============================================================================
-# GUI
+# GUI - モダンUI設定
 # =============================================================================
 
+# カラーパレット
+COLORS = {
+    "primary": "#3B82F6",        # ブルー
+    "primary_hover": "#2563EB",  # ダークブルー
+    "success": "#10B981",        # グリーン
+    "warning": "#F59E0B",        # オレンジ
+    "danger": "#EF4444",         # レッド
+    "bg": "#F8FAFC",             # 背景
+    "surface": "#FFFFFF",        # カード背景
+    "text": "#1E293B",           # メインテキスト
+    "text_secondary": "#64748B", # サブテキスト
+    "text_muted": "#94A3B8",     # ミュートテキスト
+    "border": "#E2E8F0",         # ボーダー
+}
+
+# フォント設定
+FONT_FAMILY = "Yu Gothic UI"
+FONTS = {
+    "title": (FONT_FAMILY, 20, "bold"),
+    "heading": (FONT_FAMILY, 14, "bold"),
+    "body": (FONT_FAMILY, 11),
+    "small": (FONT_FAMILY, 10),
+}
+
+
 class LicenseActivationDialog:
-    """ライセンス認証ダイアログ"""
+    """ライセンス認証ダイアログ（モダンUI）"""
 
     def __init__(self, parent: Tk, license_manager: LicenseManager):
         self.parent = parent
@@ -1142,16 +1230,17 @@ class LicenseActivationDialog:
 
         self.dialog = Toplevel(parent)
         self.dialog.title("ライセンス認証")
-        self.dialog.geometry("450x400")
+        self.dialog.geometry("500x480")
         self.dialog.resizable(False, False)
         self.dialog.transient(parent)
         self.dialog.grab_set()
+        self.dialog.configure(bg=COLORS["bg"])
 
         # ダイアログを中央に配置
         self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() - 450) // 2
-        y = (self.dialog.winfo_screenheight() - 400) // 2
-        self.dialog.geometry(f"450x400+{x}+{y}")
+        x = (self.dialog.winfo_screenwidth() - 500) // 2
+        y = (self.dialog.winfo_screenheight() - 480) // 2
+        self.dialog.geometry(f"500x480+{x}+{y}")
 
         self.setup_ui()
 
@@ -1159,55 +1248,68 @@ class LicenseActivationDialog:
         self.dialog.protocol("WM_DELETE_WINDOW", self.on_cancel)
 
     def setup_ui(self):
-        main_frame = Frame(self.dialog, padx=30, pady=20)
-        main_frame.pack(fill='both', expand=True)
+        # メインカード
+        card = Frame(self.dialog, bg=COLORS["surface"], padx=40, pady=30)
+        card.pack(fill='both', expand=True, padx=20, pady=20)
 
         # タイトル
-        Label(main_frame, text=PRODUCT_NAME, font=('Helvetica', 16, 'bold')).pack(pady=(0, 5))
-        Label(main_frame, text="ライセンス認証", font=('Helvetica', 12)).pack(pady=(0, 20))
+        Label(card, text=PRODUCT_NAME, font=FONTS["title"],
+              bg=COLORS["surface"], fg=COLORS["primary"]).pack(pady=(0, 5))
+        Label(card, text="ライセンス認証", font=FONTS["heading"],
+              bg=COLORS["surface"], fg=COLORS["text_secondary"]).pack(pady=(0, 25))
 
         # 説明
         desc_text = "製品をご利用いただくには、ライセンスキーの認証が必要です。"
-        Label(main_frame, text=desc_text, wraplength=380, justify='left').pack(anchor='w', pady=(0, 15))
+        Label(card, text=desc_text, wraplength=400, justify='left',
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w', pady=(0, 20))
 
         # メールアドレス
-        Label(main_frame, text="メールアドレス:", anchor='w').pack(fill='x')
-        self.email_entry = Entry(main_frame, width=50)
-        self.email_entry.pack(fill='x', pady=(5, 15))
+        Label(card, text="メールアドレス:", anchor='w',
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x')
+        self.email_entry = Entry(card, width=50, font=FONTS["body"], relief='solid', bd=1)
+        self.email_entry.pack(fill='x', pady=(5, 15), ipady=5)
 
         # ライセンスキー
-        Label(main_frame, text="ライセンスキー:", anchor='w').pack(fill='x')
-        self.key_entry = Entry(main_frame, width=50)
-        self.key_entry.pack(fill='x', pady=(5, 10))
-        Label(main_frame, text="例: INS-FGIN-STD-XXXX-XXXX-XX", fg='gray', font=('Helvetica', 9)).pack(anchor='w')
+        Label(card, text="ライセンスキー:", anchor='w',
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(fill='x')
+        self.key_entry = Entry(card, width=50, font=FONTS["body"], relief='solid', bd=1)
+        self.key_entry.pack(fill='x', pady=(5, 8), ipady=5)
+        Label(card, text="例: FGIN-STD-3101-XXXX-XXXX-XXXX",
+              fg=COLORS["text_muted"], font=FONTS["small"], bg=COLORS["surface"]).pack(anchor='w')
 
         # エラーメッセージ
-        self.error_label = Label(main_frame, text="", fg='red', wraplength=380)
+        self.error_label = Label(card, text="", fg=COLORS["danger"], wraplength=400,
+                                  font=FONTS["small"], bg=COLORS["surface"])
         self.error_label.pack(pady=10)
 
         # ボタンフレーム
-        btn_frame = Frame(main_frame)
+        btn_frame = Frame(card, bg=COLORS["surface"])
         btn_frame.pack(pady=15)
 
         Button(btn_frame, text="認証", command=self.on_activate,
-               bg='#2563EB', fg='white', padx=20, pady=5).pack(side='left', padx=5)
+               bg=COLORS["primary"], fg='white', font=FONTS["body"],
+               padx=25, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=5)
         Button(btn_frame, text="Free版で続行", command=self.on_continue_free,
-               padx=20, pady=5).pack(side='left', padx=5)
+               bg=COLORS["bg"], fg=COLORS["text"], font=FONTS["body"],
+               padx=15, pady=8, relief='flat', cursor='hand2').pack(side='left', padx=5)
 
         # リンクフレーム
-        link_frame = Frame(main_frame)
+        link_frame = Frame(card, bg=COLORS["surface"])
         link_frame.pack(pady=10)
 
-        trial_link = Label(link_frame, text="トライアル申請", fg='blue', cursor='hand2')
+        trial_link = Label(link_frame, text="トライアル申請", fg=COLORS["primary"],
+                           cursor='hand2', font=FONTS["small"], bg=COLORS["surface"])
         trial_link.pack(side='left', padx=10)
         trial_link.bind('<Button-1>', lambda e: webbrowser.open(TRIAL_URL))
 
-        purchase_link = Label(link_frame, text="ライセンス購入", fg='blue', cursor='hand2')
+        purchase_link = Label(link_frame, text="ライセンス購入", fg=COLORS["primary"],
+                               cursor='hand2', font=FONTS["small"], bg=COLORS["surface"])
         purchase_link.pack(side='left', padx=10)
         purchase_link.bind('<Button-1>', lambda e: webbrowser.open(PURCHASE_URL))
 
         # 価格表示
-        Label(main_frame, text=f"Standard版: {PRICE_STANDARD}", font=('Helvetica', 10)).pack(pady=5)
+        Label(card, text=f"Standard版: {PRICE_STANDARD}",
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text_secondary"]).pack(pady=5)
 
     def on_activate(self):
         email = self.email_entry.get().strip()
@@ -1247,17 +1349,28 @@ class LicenseActivationDialog:
 
 
 class ForguncyInsightApp:
+    """モダンUI対応のメインアプリケーション"""
+
     def __init__(self, root: Tk):
         self.root = root
         self.root.title(f"Forguncy Insight {VERSION_INFO}")
-        self.root.geometry("700x550")
+        self.root.geometry("800x600")
         self.root.resizable(True, True)
+        self.root.configure(bg=COLORS["bg"])
+
+        # DPI対応
+        try:
+            import ctypes
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except:
+            pass
 
         self.license_manager = LicenseManager()
         self.file_path = StringVar()
         self.file_path2 = StringVar()  # 差分比較用
         self.output_dir = StringVar(value=str(Path.home() / "Documents"))
 
+        self.setup_styles()
         self.setup_ui()
 
         # 起動時ライセンスチェック（UIセットアップ後）
@@ -1267,13 +1380,37 @@ class ForguncyInsightApp:
             # 期限警告の表示
             self.show_expiry_warning()
 
+    def setup_styles(self):
+        """ttkスタイル設定"""
+        style = ttk.Style()
+        style.configure("TNotebook", background=COLORS["bg"])
+        style.configure("TNotebook.Tab", font=FONTS["body"], padding=(15, 8))
+        style.configure("TFrame", background=COLORS["surface"])
+        style.configure("TLabel", background=COLORS["surface"], font=FONTS["body"])
+        style.configure("TCheckbutton", background=COLORS["surface"], font=FONTS["body"])
+        style.configure("TProgressbar", thickness=8)
+
     def _show_license_dialog(self):
         """ライセンスダイアログを表示"""
         dialog = LicenseActivationDialog(self.root, self.license_manager)
         dialog.show()
         # ダイアログ後にUI更新
         self.refresh_ui()
-        self.license_status.config(text=f"ライセンス: {self.license_manager.tier_name}")
+        self._update_license_badge()
+
+    def _update_license_badge(self):
+        """ライセンスバッジを更新"""
+        tier = self.license_manager.tier
+        badge_colors = {
+            'TRIAL': (COLORS["warning"], "#FEF3C7"),
+            'STD': (COLORS["primary"], "#DBEAFE"),
+            'PRO': ("#8B5CF6", "#EDE9FE"),
+        }
+        if tier and tier in badge_colors:
+            fg, bg = badge_colors[tier]
+            self.license_badge.config(text=self.license_manager.tier_name, fg=fg, bg=bg)
+        else:
+            self.license_badge.config(text="Free", fg=COLORS["text_muted"], bg=COLORS["bg"])
 
     def show_expiry_warning(self):
         """期限警告を表示"""
@@ -1283,60 +1420,91 @@ class ForguncyInsightApp:
                 messagebox.showwarning("ライセンス期限のお知らせ", warning_msg)
 
     def setup_ui(self):
+        # ヘッダー
+        header = Frame(self.root, bg=COLORS["surface"], height=70)
+        header.pack(fill='x')
+        header.pack_propagate(False)
+
+        header_inner = Frame(header, bg=COLORS["surface"])
+        header_inner.pack(fill='x', padx=20, pady=15)
+
+        # タイトル
+        title_frame = Frame(header_inner, bg=COLORS["surface"])
+        title_frame.pack(side='left')
+
+        Label(title_frame, text="◇ Forguncy Insight", font=FONTS["title"],
+              bg=COLORS["surface"], fg=COLORS["primary"]).pack(side='left')
+
+        Label(title_frame, text=f"  {VERSION_INFO}", font=FONTS["small"],
+              bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side='left', padx=(10, 0))
+
+        # ライセンスバッジ
+        self.license_badge = Label(title_frame, text="Free", font=FONTS["small"],
+                                    padx=10, pady=3, bg=COLORS["bg"], fg=COLORS["text_muted"])
+        self.license_badge.pack(side='left', padx=(15, 0))
+        self._update_license_badge()
+
+        # ライセンスボタン
+        license_btn = Button(header_inner, text="🔑 ライセンス", font=FONTS["small"],
+                              bg=COLORS["bg"], fg=COLORS["text"], relief='flat',
+                              padx=10, pady=5, cursor='hand2',
+                              command=self._show_license_dialog)
+        license_btn.pack(side='right')
+
         # Notebook (タブ)
         self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
+        self.notebook.pack(fill='both', expand=True, padx=15, pady=(10, 15))
 
         # タブ1: 解析
-        self.tab_analyze = Frame(self.notebook, padx=20, pady=20)
+        self.tab_analyze = Frame(self.notebook, bg=COLORS["surface"], padx=30, pady=25)
         self.notebook.add(self.tab_analyze, text='  解析  ')
         self.setup_analyze_tab()
 
         # タブ2: 差分比較
-        self.tab_diff = Frame(self.notebook, padx=20, pady=20)
+        self.tab_diff = Frame(self.notebook, bg=COLORS["surface"], padx=30, pady=25)
         self.notebook.add(self.tab_diff, text='  差分比較  ')
         self.setup_diff_tab()
 
-        # タブ3: ライセンス
-        self.tab_license = Frame(self.notebook, padx=20, pady=20)
-        self.notebook.add(self.tab_license, text='  ライセンス  ')
-        self.setup_license_tab()
 
     def setup_analyze_tab(self):
         # タイトル
-        Label(self.tab_analyze, text="Forguncy Insight", font=('Helvetica', 18, 'bold')).pack(pady=(0, 5))
-        Label(self.tab_analyze, text="Forguncyプロジェクト解析・仕様書自動生成", font=('Helvetica', 10)).pack(pady=(0, 3))
-        Label(self.tab_analyze, text=VERSION_INFO, font=('Helvetica', 9), fg='gray').pack(pady=(0, 10))
-
-        # ライセンス状態
-        self.license_status = Label(self.tab_analyze, text=f"ライセンス: {self.license_manager.tier_name}", fg='blue')
-        self.license_status.pack()
+        Label(self.tab_analyze, text="Forguncyプロジェクト解析・仕様書自動生成",
+              font=FONTS["heading"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w', pady=(0, 20))
 
         # ファイル選択
-        file_frame = Frame(self.tab_analyze)
+        file_frame = Frame(self.tab_analyze, bg=COLORS["surface"])
         file_frame.pack(fill='x', pady=10)
-        Label(file_frame, text="プロジェクトファイル (.fgcp):").pack(anchor='w')
-        file_input = Frame(file_frame)
+        Label(file_frame, text="プロジェクトファイル (.fgcp):",
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w')
+        file_input = Frame(file_frame, bg=COLORS["surface"])
         file_input.pack(fill='x', pady=5)
-        Entry(file_input, textvariable=self.file_path, state='readonly').pack(side='left', fill='x', expand=True)
-        Button(file_input, text="参照...", command=self.browse_file).pack(side='right', padx=(10, 0))
+        Entry(file_input, textvariable=self.file_path, state='readonly',
+              font=FONTS["body"], relief='solid', bd=1).pack(side='left', fill='x', expand=True, ipady=4)
+        Button(file_input, text="参照...", command=self.browse_file,
+               font=FONTS["body"], bg=COLORS["primary"], fg='white',
+               relief='flat', padx=15, cursor='hand2').pack(side='right', padx=(10, 0))
 
         # 出力フォルダ
-        output_frame = Frame(self.tab_analyze)
+        output_frame = Frame(self.tab_analyze, bg=COLORS["surface"])
         output_frame.pack(fill='x', pady=10)
-        Label(output_frame, text="出力フォルダ:").pack(anchor='w')
-        output_input = Frame(output_frame)
+        Label(output_frame, text="出力フォルダ:",
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w')
+        output_input = Frame(output_frame, bg=COLORS["surface"])
         output_input.pack(fill='x', pady=5)
-        Entry(output_input, textvariable=self.output_dir).pack(side='left', fill='x', expand=True)
-        Button(output_input, text="変更...", command=self.browse_output).pack(side='right', padx=(10, 0))
+        Entry(output_input, textvariable=self.output_dir,
+              font=FONTS["body"], relief='solid', bd=1).pack(side='left', fill='x', expand=True, ipady=4)
+        Button(output_input, text="変更...", command=self.browse_output,
+               font=FONTS["body"], bg=COLORS["bg"], fg=COLORS["text"],
+               relief='flat', padx=15, cursor='hand2').pack(side='right', padx=(10, 0))
 
         # 出力形式
-        format_frame = Frame(self.tab_analyze)
-        format_frame.pack(fill='x', pady=10)
-        Label(format_frame, text="出力形式:").pack(anchor='w')
+        format_frame = Frame(self.tab_analyze, bg=COLORS["surface"])
+        format_frame.pack(fill='x', pady=15)
+        Label(format_frame, text="出力形式:",
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w')
 
         self.output_word = ttk.Checkbutton(format_frame, text="Word (.docx)")
-        self.output_word.pack(anchor='w')
+        self.output_word.pack(anchor='w', pady=3)
         self.output_word.state(['selected'] if self.license_manager.limits.get('word_export') else ['disabled'])
 
         self.output_excel = ttk.Checkbutton(format_frame, text="Excel (.xlsx)")
@@ -1344,108 +1512,67 @@ class ForguncyInsightApp:
         self.output_excel.state(['selected'] if self.license_manager.limits.get('excel_export') else ['disabled'])
 
         # プログレス
-        self.progress = ttk.Progressbar(self.tab_analyze, mode='determinate')
-        self.progress.pack(fill='x', pady=15)
-        self.status_label = Label(self.tab_analyze, text="")
-        self.status_label.pack()
+        progress_frame = Frame(self.tab_analyze, bg=COLORS["surface"])
+        progress_frame.pack(fill='x', pady=20)
+        self.progress = ttk.Progressbar(progress_frame, mode='determinate')
+        self.progress.pack(fill='x')
+        self.status_label = Label(progress_frame, text="準備完了",
+                                   font=FONTS["small"], bg=COLORS["surface"], fg=COLORS["text_muted"])
+        self.status_label.pack(pady=(5, 0))
 
         # 解析ボタン
         self.analyze_btn = Button(self.tab_analyze, text="解析開始", command=self.start_analysis,
-                                   font=('Helvetica', 12), bg='#2563EB', fg='white', padx=30, pady=10)
+                                   font=FONTS["heading"], bg=COLORS["primary"], fg='white',
+                                   padx=40, pady=12, relief='flat', cursor='hand2')
         self.analyze_btn.pack(pady=15)
 
         # Free版の制限表示
         if not self.license_manager.is_activated:
             limits = self.license_manager.limits
             limit_text = f"Free版制限: テーブル{int(limits['max_tables'])}件, ページ{int(limits['max_pages'])}件, サーバーコマンド{int(limits['max_server_commands'])}件"
-            Label(self.tab_analyze, text=limit_text, fg='gray', font=('Helvetica', 9)).pack()
+            Label(self.tab_analyze, text=limit_text, fg=COLORS["text_muted"],
+                  font=FONTS["small"], bg=COLORS["surface"]).pack()
 
     def setup_diff_tab(self):
-        Label(self.tab_diff, text="プロジェクト差分比較", font=('Helvetica', 16, 'bold')).pack(pady=(0, 20))
+        Label(self.tab_diff, text="プロジェクト差分比較", font=FONTS["heading"],
+              bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w', pady=(0, 20))
 
         if not self.license_manager.limits.get('diff_compare'):
-            Label(self.tab_diff, text="この機能はStandard版で利用できます", fg='red').pack(pady=20)
-            Button(self.tab_diff, text="ライセンスを購入", command=lambda: webbrowser.open('https://example.com/buy')).pack()
+            Label(self.tab_diff, text="この機能はStandard版で利用できます",
+                  fg=COLORS["danger"], font=FONTS["body"], bg=COLORS["surface"]).pack(pady=20)
+            Button(self.tab_diff, text="ライセンスを購入",
+                   command=lambda: webbrowser.open(PURCHASE_URL),
+                   font=FONTS["body"], bg=COLORS["primary"], fg='white',
+                   relief='flat', padx=20, cursor='hand2').pack()
             return
 
         # ファイル1
-        Label(self.tab_diff, text="比較元ファイル (旧バージョン):").pack(anchor='w')
-        file1_frame = Frame(self.tab_diff)
+        Label(self.tab_diff, text="比較元ファイル (旧バージョン):",
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w')
+        file1_frame = Frame(self.tab_diff, bg=COLORS["surface"])
         file1_frame.pack(fill='x', pady=5)
-        Entry(file1_frame, textvariable=self.file_path).pack(side='left', fill='x', expand=True)
-        Button(file1_frame, text="参照...", command=self.browse_file).pack(side='right', padx=(10, 0))
+        Entry(file1_frame, textvariable=self.file_path,
+              font=FONTS["body"], relief='solid', bd=1).pack(side='left', fill='x', expand=True, ipady=4)
+        Button(file1_frame, text="参照...", command=self.browse_file,
+               font=FONTS["body"], bg=COLORS["bg"], fg=COLORS["text"],
+               relief='flat', padx=15, cursor='hand2').pack(side='right', padx=(10, 0))
 
         # ファイル2
-        Label(self.tab_diff, text="比較先ファイル (新バージョン):").pack(anchor='w', pady=(15, 0))
-        file2_frame = Frame(self.tab_diff)
+        Label(self.tab_diff, text="比較先ファイル (新バージョン):",
+              font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text"]).pack(anchor='w', pady=(15, 0))
+        file2_frame = Frame(self.tab_diff, bg=COLORS["surface"])
         file2_frame.pack(fill='x', pady=5)
-        Entry(file2_frame, textvariable=self.file_path2).pack(side='left', fill='x', expand=True)
-        Button(file2_frame, text="参照...", command=self.browse_file2).pack(side='right', padx=(10, 0))
+        Entry(file2_frame, textvariable=self.file_path2,
+              font=FONTS["body"], relief='solid', bd=1).pack(side='left', fill='x', expand=True, ipady=4)
+        Button(file2_frame, text="参照...", command=self.browse_file2,
+               font=FONTS["body"], bg=COLORS["bg"], fg=COLORS["text"],
+               relief='flat', padx=15, cursor='hand2').pack(side='right', padx=(10, 0))
 
         # 比較ボタン
         Button(self.tab_diff, text="差分を比較", command=self.compare_files,
-               font=('Helvetica', 12), bg='#059669', fg='white', padx=30, pady=10).pack(pady=30)
+               font=FONTS["heading"], bg=COLORS["success"], fg='white',
+               padx=40, pady=12, relief='flat', cursor='hand2').pack(pady=30)
 
-    def setup_license_tab(self):
-        Label(self.tab_license, text="ライセンス管理", font=('Helvetica', 16, 'bold')).pack(pady=(0, 20))
-
-        # 現在のステータス
-        status_frame = Frame(self.tab_license, relief='groove', borderwidth=2)
-        status_frame.pack(fill='x', pady=10, padx=20)
-
-        self.license_tier_label = Label(status_frame, text=f"現在のプラン: {self.license_manager.tier_name}",
-                                         font=('Helvetica', 12, 'bold'))
-        self.license_tier_label.pack(pady=10)
-
-        if self.license_manager.is_activated:
-            if self.license_manager.email:
-                Label(status_frame, text=f"登録メール: {self.license_manager.email}").pack()
-            if self.license_manager.expires_at:
-                days = self.license_manager.days_until_expiry
-                expiry_text = f"有効期限: {self.license_manager.expires_at.strftime('%Y年%m月%d日')}"
-                if days is not None and days > 0:
-                    expiry_text += f" (残り{days}日)"
-                expiry_color = 'red' if self.license_manager.is_expiring_soon else 'black'
-                Label(status_frame, text=expiry_text, fg=expiry_color).pack()
-
-        # メールアドレス入力
-        Label(self.tab_license, text="メールアドレス:").pack(anchor='w', padx=20, pady=(20, 5))
-        self.email_entry = Entry(self.tab_license, width=50)
-        self.email_entry.pack(padx=20)
-        self.email_entry.insert(0, self.license_manager.email or '')
-
-        # ライセンスキー入力
-        Label(self.tab_license, text="ライセンスキー:").pack(anchor='w', padx=20, pady=(10, 5))
-        self.license_key_entry = Entry(self.tab_license, width=50)
-        self.license_key_entry.pack(padx=20)
-        self.license_key_entry.insert(0, self.license_manager.license_key or '')
-        Label(self.tab_license, text="例: INS-FGIN-STD-XXXX-XXXX-XX", fg='gray', font=('Helvetica', 9)).pack(anchor='w', padx=20)
-
-        # ボタン
-        btn_frame = Frame(self.tab_license)
-        btn_frame.pack(pady=15)
-        Button(btn_frame, text="アクティベート", command=self.activate_license, bg='#2563EB', fg='white', padx=20).pack(side='left', padx=5)
-        Button(btn_frame, text="ライセンス解除", command=self.clear_license).pack(side='left', padx=5)
-
-        # エラーメッセージ
-        self.license_error = Label(self.tab_license, text="", fg='red')
-        self.license_error.pack()
-
-        # リンクフレーム
-        link_frame = Frame(self.tab_license)
-        link_frame.pack(pady=10)
-
-        trial_link = Label(link_frame, text="トライアル申請", fg='blue', cursor='hand2')
-        trial_link.pack(side='left', padx=10)
-        trial_link.bind('<Button-1>', lambda e: webbrowser.open(TRIAL_URL))
-
-        purchase_link = Label(link_frame, text="ライセンス購入", fg='blue', cursor='hand2')
-        purchase_link.pack(side='left', padx=10)
-        purchase_link.bind('<Button-1>', lambda e: webbrowser.open(PURCHASE_URL))
-
-        # 購入情報
-        Label(self.tab_license, text=f"Standard版 ({PRICE_STANDARD})", font=('Helvetica', 11)).pack(pady=(10, 5))
-        Label(self.tab_license, text="• 解析件数無制限\n• Word/Excel出力\n• 差分比較機能\n• 商用利用OK", justify='left').pack()
 
     def browse_file(self):
         path = filedialog.askopenfilename(title="Forguncyプロジェクトを選択", filetypes=[("Forguncy Project", "*.fgcp")])
@@ -1572,41 +1699,6 @@ class ForguncyInsightApp:
         except Exception as e:
             messagebox.showerror("エラー", f"比較中にエラーが発生しました:\n{str(e)}")
 
-    def activate_license(self):
-        email = self.email_entry.get().strip()
-        key = self.license_key_entry.get().strip()
-
-        if not email:
-            self.license_error.config(text="メールアドレスを入力してください")
-            return
-
-        if not key:
-            self.license_error.config(text="ライセンスキーを入力してください")
-            return
-
-        result = self.license_manager.activate(email, key)
-        if result['is_valid']:
-            self.license_error.config(text="")
-            self.license_tier_label.config(text=f"現在のプラン: {self.license_manager.tier_name}")
-            self.license_status.config(text=f"ライセンス: {self.license_manager.tier_name}")
-            messagebox.showinfo("成功",
-                f"ライセンスがアクティベートされました。\n\n"
-                f"プラン: {self.license_manager.tier_name}\n"
-                f"有効期限: {self.license_manager.expires_at.strftime('%Y年%m月%d日')}")
-            # UIを更新
-            self.refresh_ui()
-        else:
-            self.license_error.config(text=result.get('error', '不明なエラー'))
-
-    def clear_license(self):
-        if messagebox.askyesno("確認", "ライセンスを解除しますか？"):
-            self.license_manager.clear()
-            self.license_tier_label.config(text="現在のプラン: Free")
-            self.license_status.config(text="ライセンス: Free")
-            self.email_entry.delete(0, END)
-            self.license_key_entry.delete(0, END)
-            self.license_error.config(text="")
-            self.refresh_ui()
 
     def refresh_ui(self):
         """ライセンス状態に応じてUIを更新"""
@@ -1620,6 +1712,14 @@ class ForguncyInsightApp:
             self.output_excel.state(['!disabled', 'selected'])
         else:
             self.output_excel.state(['disabled', '!selected'])
+
+        # 差分比較タブを再構築
+        for widget in self.tab_diff.winfo_children():
+            widget.destroy()
+        self.setup_diff_tab()
+
+        # Free版制限表示の更新
+        self._update_license_badge()
 
 
 def main():
