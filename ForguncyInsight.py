@@ -1159,7 +1159,8 @@ def register_dnd(widget, on_select_path, highlight_bg='#E0F2FE', normal_bg=None)
     if normal_bg is None:
         try:
             normal_bg = widget.cget('bg')
-        except:
+        except Exception:
+            # Some widgets don't support bg option
             normal_bg = 'white'
     
     def on_drop(event):
@@ -1196,21 +1197,24 @@ def register_dnd(widget, on_select_path, highlight_bg='#E0F2FE', normal_bg=None)
             # Reset background color
             try:
                 widget.config(bg=normal_bg)
-            except:
+            except Exception:
+                # Silently ignore if background color change fails
                 pass
     
     def on_drag_enter(event):
         """Handle drag enter event - highlight the widget"""
         try:
             widget.config(bg=highlight_bg)
-        except:
+        except Exception:
+            # Silently ignore if background color change fails
             pass
     
     def on_drag_leave(event):
         """Handle drag leave event - restore normal background"""
         try:
             widget.config(bg=normal_bg)
-        except:
+        except Exception:
+            # Silently ignore if background color change fails
             pass
     
     # Register the widget as a drop target
