@@ -947,7 +947,7 @@ class ForguncyInsightApp:
             text_frame = Frame(diff_window)
             text_frame.pack(fill=BOTH, expand=True, padx=10, pady=(0, 10))
 
-            text = Text(text_frame, wrap=WORD, padx=10, pady=10, font=("Consolas", 10))
+            text = Text(text_frame, wrap=WORD, padx=10, pady=10, font=("Yu Gothic UI", 10))
             scrollbar = Scrollbar(text_frame, command=text.yview)
             text.configure(yscrollcommand=scrollbar.set)
             scrollbar.pack(side=RIGHT, fill=Y)
