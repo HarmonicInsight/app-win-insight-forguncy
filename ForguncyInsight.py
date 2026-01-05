@@ -1429,15 +1429,15 @@ COLORS = {
     "border": "#E2E8F0",         # ボーダー - Unified
 }
 
-# フォント設定（統一デザイン - クリーンで読みやすい）
-FONT_FAMILY = "Meiryo UI"
+# フォント設定（Windows標準UIフォント）
+FONT_FAMILY = "Segoe UI Variable"
 FONTS = {
     "title": (FONT_FAMILY, 16, "bold"),
     "heading": (FONT_FAMILY, 12, "bold"),
     "body": (FONT_FAMILY, 10),
     "small": (FONT_FAMILY, 9),
     "code": ("Consolas", 10),
-    # 日本語対応のフォールバック（同一フォント）
+    # フォールバック（同一フォント）
     "title_ja": (FONT_FAMILY, 16, "bold"),
     "heading_ja": (FONT_FAMILY, 12, "bold"),
     "body_ja": (FONT_FAMILY, 10),
