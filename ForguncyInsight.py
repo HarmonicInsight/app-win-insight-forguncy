@@ -49,10 +49,19 @@ except ImportError:
 # =============================================================================
 
 LICENSE_KEY_PATTERN = re.compile(
-    r'^INS-(SALES|SLIDE|PY|INTV|FORG|ALL)-(TRIAL|STD|PRO|ENT)-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{2})$'
+    r'^INS-(SALES|SLIDE|PY|INTV|FORG|FGIN|ALL)-(TRIAL|STD|PRO|ENT)-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{2})$'
 )
 
-PRODUCT_CODE = 'FORG'  # Forguncy Insight
+PRODUCT_CODE = 'FGIN'  # Forguncy Insight (新コード)
+PRODUCT_NAME = 'Forguncy Insight'
+PRICE_STANDARD = '¥49,800/年'
+
+# 購入・トライアルURL
+PURCHASE_URL = 'https://because-zero.com/forguncy-insight/purchase'
+TRIAL_URL = 'https://because-zero.com/forguncy-insight/trial'
+
+# 期限警告の日数
+EXPIRY_WARNING_DAYS = 30
 
 # 機能制限
 FEATURE_LIMITS = {
@@ -151,7 +160,9 @@ class LicenseManager:
 
     def __init__(self):
         self.license_key = None
+        self.email = None
         self.expires_at = None
+        self.activated_at = None
         self.license_info = None
         self.limits = get_feature_limits(None)
         self.load()
@@ -163,9 +174,13 @@ class LicenseManager:
                 with open(self.CONFIG_FILE, 'r') as f:
                     data = json.load(f)
                     self.license_key = data.get('license_key')
+                    self.email = data.get('email')
                     expires_str = data.get('expires_at')
+                    activated_str = data.get('activated_at')
                     if expires_str:
                         self.expires_at = datetime.fromisoformat(expires_str)
+                    if activated_str:
+                        self.activated_at = datetime.fromisoformat(activated_str)
                     self.validate()
             except Exception:
                 pass
@@ -174,13 +189,19 @@ class LicenseManager:
         """ライセンス情報を保存"""
         data = {
             'license_key': self.license_key,
-            'expires_at': self.expires_at.isoformat() if self.expires_at else None
+            'email': self.email,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'activated_at': self.activated_at.isoformat() if self.activated_at else None
         }
         with open(self.CONFIG_FILE, 'w') as f:
-            json.dump(data, f)
+            json.dump(data, f, indent=2)
 
-    def activate(self, license_key: str, expires_at: Optional[datetime] = None) -> Dict:
+    def activate(self, email: str, license_key: str, expires_at: Optional[datetime] = None) -> Dict:
         """ライセンスをアクティベート"""
+        # メールアドレスの検証
+        if not email or '@' not in email:
+            return {'is_valid': False, 'error': '有効なメールアドレスを入力してください', 'tier': None}
+
         # 新規アクティベーション時のデフォルト期限（1年）
         if not expires_at:
             expires_at = datetime.now() + timedelta(days=365)
@@ -189,7 +210,9 @@ class LicenseManager:
 
         if info['is_valid']:
             self.license_key = license_key
+            self.email = email
             self.expires_at = expires_at
+            self.activated_at = datetime.now()
             self.license_info = info
             self.limits = get_feature_limits(info['tier'])
             self.save()
@@ -210,7 +233,9 @@ class LicenseManager:
     def clear(self):
         """ライセンスをクリア"""
         self.license_key = None
+        self.email = None
         self.expires_at = None
+        self.activated_at = None
         self.license_info = None
         self.limits = get_feature_limits(None)
         if self.CONFIG_FILE.exists():
@@ -229,6 +254,30 @@ class LicenseManager:
         if self.tier:
             return TIER_NAMES.get(self.tier, self.tier)
         return 'Free'
+
+    @property
+    def days_until_expiry(self) -> Optional[int]:
+        """有効期限までの日数を返す"""
+        if not self.expires_at:
+            return None
+        delta = self.expires_at - datetime.now()
+        return delta.days
+
+    @property
+    def is_expiring_soon(self) -> bool:
+        """期限が近づいているかチェック（30日前から警告）"""
+        days = self.days_until_expiry
+        if days is None:
+            return False
+        return 0 < days <= EXPIRY_WARNING_DAYS
+
+    @property
+    def expiry_warning_message(self) -> Optional[str]:
+        """期限警告メッセージを返す"""
+        if not self.is_expiring_soon:
+            return None
+        days = self.days_until_expiry
+        return f"ライセンスの有効期限まであと{days}日です。更新をお忘れなく！"
 
 
 # =============================================================================
@@ -1083,6 +1132,122 @@ def generate_er_mermaid(tables: list) -> str:
 # GUI
 # =============================================================================
 
+class LicenseActivationDialog:
+    """ライセンス認証ダイアログ"""
+
+    def __init__(self, parent: Tk, license_manager: LicenseManager):
+        self.parent = parent
+        self.license_manager = license_manager
+        self.result = False
+
+        self.dialog = Toplevel(parent)
+        self.dialog.title("ライセンス認証")
+        self.dialog.geometry("450x400")
+        self.dialog.resizable(False, False)
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+
+        # ダイアログを中央に配置
+        self.dialog.update_idletasks()
+        x = (self.dialog.winfo_screenwidth() - 450) // 2
+        y = (self.dialog.winfo_screenheight() - 400) // 2
+        self.dialog.geometry(f"450x400+{x}+{y}")
+
+        self.setup_ui()
+
+        # 閉じるボタンの処理
+        self.dialog.protocol("WM_DELETE_WINDOW", self.on_cancel)
+
+    def setup_ui(self):
+        main_frame = Frame(self.dialog, padx=30, pady=20)
+        main_frame.pack(fill='both', expand=True)
+
+        # タイトル
+        Label(main_frame, text=PRODUCT_NAME, font=('Helvetica', 16, 'bold')).pack(pady=(0, 5))
+        Label(main_frame, text="ライセンス認証", font=('Helvetica', 12)).pack(pady=(0, 20))
+
+        # 説明
+        desc_text = "製品をご利用いただくには、ライセンスキーの認証が必要です。"
+        Label(main_frame, text=desc_text, wraplength=380, justify='left').pack(anchor='w', pady=(0, 15))
+
+        # メールアドレス
+        Label(main_frame, text="メールアドレス:", anchor='w').pack(fill='x')
+        self.email_entry = Entry(main_frame, width=50)
+        self.email_entry.pack(fill='x', pady=(5, 15))
+
+        # ライセンスキー
+        Label(main_frame, text="ライセンスキー:", anchor='w').pack(fill='x')
+        self.key_entry = Entry(main_frame, width=50)
+        self.key_entry.pack(fill='x', pady=(5, 10))
+        Label(main_frame, text="例: INS-FGIN-STD-XXXX-XXXX-XX", fg='gray', font=('Helvetica', 9)).pack(anchor='w')
+
+        # エラーメッセージ
+        self.error_label = Label(main_frame, text="", fg='red', wraplength=380)
+        self.error_label.pack(pady=10)
+
+        # ボタンフレーム
+        btn_frame = Frame(main_frame)
+        btn_frame.pack(pady=15)
+
+        Button(btn_frame, text="認証", command=self.on_activate,
+               bg='#2563EB', fg='white', padx=20, pady=5).pack(side='left', padx=5)
+        Button(btn_frame, text="Free版で続行", command=self.on_continue_free,
+               padx=20, pady=5).pack(side='left', padx=5)
+
+        # リンクフレーム
+        link_frame = Frame(main_frame)
+        link_frame.pack(pady=10)
+
+        trial_link = Label(link_frame, text="トライアル申請", fg='blue', cursor='hand2')
+        trial_link.pack(side='left', padx=10)
+        trial_link.bind('<Button-1>', lambda e: webbrowser.open(TRIAL_URL))
+
+        purchase_link = Label(link_frame, text="ライセンス購入", fg='blue', cursor='hand2')
+        purchase_link.pack(side='left', padx=10)
+        purchase_link.bind('<Button-1>', lambda e: webbrowser.open(PURCHASE_URL))
+
+        # 価格表示
+        Label(main_frame, text=f"Standard版: {PRICE_STANDARD}", font=('Helvetica', 10)).pack(pady=5)
+
+    def on_activate(self):
+        email = self.email_entry.get().strip()
+        key = self.key_entry.get().strip()
+
+        if not email:
+            self.error_label.config(text="メールアドレスを入力してください")
+            return
+
+        if not key:
+            self.error_label.config(text="ライセンスキーを入力してください")
+            return
+
+        result = self.license_manager.activate(email, key)
+
+        if result['is_valid']:
+            self.result = True
+            self.dialog.destroy()
+            messagebox.showinfo("認証成功",
+                f"ライセンスが正常に認証されました。\n\n"
+                f"プラン: {self.license_manager.tier_name}\n"
+                f"有効期限: {self.license_manager.expires_at.strftime('%Y年%m月%d日')}")
+        else:
+            self.error_label.config(text=result.get('error', '認証に失敗しました'))
+
+    def on_continue_free(self):
+        self.result = True
+        self.dialog.destroy()
+
+    def on_cancel(self):
+        if messagebox.askyesno("終了確認", "アプリケーションを終了しますか？"):
+            self.parent.destroy()
+        else:
+            pass  # ダイアログを閉じない
+
+    def show(self) -> bool:
+        self.dialog.wait_window()
+        return self.result
+
+
 class ForguncyInsightApp:
     def __init__(self, root: Tk):
         self.root = root
@@ -1095,7 +1260,33 @@ class ForguncyInsightApp:
         self.file_path2 = StringVar()  # 差分比較用
         self.output_dir = StringVar(value=str(Path.home() / "Documents"))
 
+        # 起動時ライセンスチェック
+        self.check_license_on_startup()
+
         self.setup_ui()
+
+        # 期限警告の表示
+        self.show_expiry_warning()
+
+    def check_license_on_startup(self):
+        """起動時にライセンスをチェックし、未認証なら認証ダイアログを表示"""
+        if not self.license_manager.is_activated:
+            # ウィンドウを非表示にして認証ダイアログを表示
+            self.root.withdraw()
+            dialog = LicenseActivationDialog(self.root, self.license_manager)
+            if dialog.show():
+                self.root.deiconify()
+            else:
+                # ダイアログがキャンセルされた場合はアプリ終了
+                self.root.destroy()
+                return
+
+    def show_expiry_warning(self):
+        """期限警告を表示"""
+        if self.license_manager.is_expiring_soon:
+            warning_msg = self.license_manager.expiry_warning_message
+            if warning_msg:
+                messagebox.showwarning("ライセンス期限のお知らせ", warning_msg)
 
     def setup_ui(self):
         # Notebook (タブ)
@@ -1212,18 +1403,33 @@ class ForguncyInsightApp:
                                          font=('Helvetica', 12, 'bold'))
         self.license_tier_label.pack(pady=10)
 
-        if self.license_manager.is_activated and self.license_manager.expires_at:
-            Label(status_frame, text=f"有効期限: {self.license_manager.expires_at.strftime('%Y年%m月%d日')}").pack()
+        if self.license_manager.is_activated:
+            if self.license_manager.email:
+                Label(status_frame, text=f"登録メール: {self.license_manager.email}").pack()
+            if self.license_manager.expires_at:
+                days = self.license_manager.days_until_expiry
+                expiry_text = f"有効期限: {self.license_manager.expires_at.strftime('%Y年%m月%d日')}"
+                if days is not None and days > 0:
+                    expiry_text += f" (残り{days}日)"
+                expiry_color = 'red' if self.license_manager.is_expiring_soon else 'black'
+                Label(status_frame, text=expiry_text, fg=expiry_color).pack()
+
+        # メールアドレス入力
+        Label(self.tab_license, text="メールアドレス:").pack(anchor='w', padx=20, pady=(20, 5))
+        self.email_entry = Entry(self.tab_license, width=50)
+        self.email_entry.pack(padx=20)
+        self.email_entry.insert(0, self.license_manager.email or '')
 
         # ライセンスキー入力
-        Label(self.tab_license, text="ライセンスキー:").pack(anchor='w', padx=20, pady=(20, 5))
+        Label(self.tab_license, text="ライセンスキー:").pack(anchor='w', padx=20, pady=(10, 5))
         self.license_key_entry = Entry(self.tab_license, width=50)
         self.license_key_entry.pack(padx=20)
         self.license_key_entry.insert(0, self.license_manager.license_key or '')
+        Label(self.tab_license, text="例: INS-FGIN-STD-XXXX-XXXX-XX", fg='gray', font=('Helvetica', 9)).pack(anchor='w', padx=20)
 
         # ボタン
         btn_frame = Frame(self.tab_license)
-        btn_frame.pack(pady=20)
+        btn_frame.pack(pady=15)
         Button(btn_frame, text="アクティベート", command=self.activate_license, bg='#2563EB', fg='white', padx=20).pack(side='left', padx=5)
         Button(btn_frame, text="ライセンス解除", command=self.clear_license).pack(side='left', padx=5)
 
@@ -1231,9 +1437,20 @@ class ForguncyInsightApp:
         self.license_error = Label(self.tab_license, text="", fg='red')
         self.license_error.pack()
 
-        # 購入リンク
-        Label(self.tab_license, text="").pack(pady=10)
-        Label(self.tab_license, text="Standard版 (¥29,800/年)", font=('Helvetica', 11)).pack()
+        # リンクフレーム
+        link_frame = Frame(self.tab_license)
+        link_frame.pack(pady=10)
+
+        trial_link = Label(link_frame, text="トライアル申請", fg='blue', cursor='hand2')
+        trial_link.pack(side='left', padx=10)
+        trial_link.bind('<Button-1>', lambda e: webbrowser.open(TRIAL_URL))
+
+        purchase_link = Label(link_frame, text="ライセンス購入", fg='blue', cursor='hand2')
+        purchase_link.pack(side='left', padx=10)
+        purchase_link.bind('<Button-1>', lambda e: webbrowser.open(PURCHASE_URL))
+
+        # 購入情報
+        Label(self.tab_license, text=f"Standard版 ({PRICE_STANDARD})", font=('Helvetica', 11)).pack(pady=(10, 5))
         Label(self.tab_license, text="• 解析件数無制限\n• Word/Excel出力\n• 差分比較機能\n• 商用利用OK", justify='left').pack()
 
     def browse_file(self):
@@ -1362,17 +1579,26 @@ class ForguncyInsightApp:
             messagebox.showerror("エラー", f"比較中にエラーが発生しました:\n{str(e)}")
 
     def activate_license(self):
+        email = self.email_entry.get().strip()
         key = self.license_key_entry.get().strip()
+
+        if not email:
+            self.license_error.config(text="メールアドレスを入力してください")
+            return
+
         if not key:
             self.license_error.config(text="ライセンスキーを入力してください")
             return
 
-        result = self.license_manager.activate(key)
+        result = self.license_manager.activate(email, key)
         if result['is_valid']:
             self.license_error.config(text="")
             self.license_tier_label.config(text=f"現在のプラン: {self.license_manager.tier_name}")
             self.license_status.config(text=f"ライセンス: {self.license_manager.tier_name}")
-            messagebox.showinfo("成功", f"ライセンスがアクティベートされました。\nプラン: {self.license_manager.tier_name}")
+            messagebox.showinfo("成功",
+                f"ライセンスがアクティベートされました。\n\n"
+                f"プラン: {self.license_manager.tier_name}\n"
+                f"有効期限: {self.license_manager.expires_at.strftime('%Y年%m月%d日')}")
             # UIを更新
             self.refresh_ui()
         else:
@@ -1383,6 +1609,7 @@ class ForguncyInsightApp:
             self.license_manager.clear()
             self.license_tier_label.config(text="現在のプラン: Free")
             self.license_status.config(text="ライセンス: Free")
+            self.email_entry.delete(0, END)
             self.license_key_entry.delete(0, END)
             self.license_error.config(text="")
             self.refresh_ui()
