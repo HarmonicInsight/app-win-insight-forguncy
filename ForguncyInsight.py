@@ -448,6 +448,7 @@ class PageInfo:
     name: str
     page_type: str
     path: str
+    folder: str = ""  # ページのフォルダパス
     buttons: list = field(default_factory=list)
     formulas: list = field(default_factory=list)
     cell_commands: list = field(default_factory=list)
@@ -780,24 +781,35 @@ def analyze_tables(zf: zipfile.ZipFile, entries: list, max_count: int = 999) -> 
 
 def analyze_pages(zf: zipfile.ZipFile, entries: list, max_count: int = 999) -> list:
     pages = []
+    parse_errors = []
 
     for entry in [e for e in entries if e.startswith('Pages/') and e.endswith('.json')][:max_count]:
         try:
             content = zf.read(entry).decode('utf-8')
             data = extract_json(content)
             elements = extract_page_elements(data)
-            pages.append(PageInfo(name=data.get('Name', Path(entry).stem), page_type='page', path=entry, **elements))
+            # フォルダパスを抽出 (Pages/FolderA/FolderB/page.json -> FolderA/FolderB)
+            path_parts = entry.split('/')
+            folder = '/'.join(path_parts[1:-1]) if len(path_parts) > 2 else ''
+            pages.append(PageInfo(name=data.get('Name', Path(entry).stem), page_type='page', path=entry, folder=folder, **elements))
         except Exception as e:
-            print(f"Error parsing page {entry}: {e}")
+            parse_errors.append(f"Page {entry}: {e}")
 
     for entry in [e for e in entries if e.startswith('MasterPages/') and e.endswith('.json')]:
         try:
             content = zf.read(entry).decode('utf-8')
             data = extract_json(content)
             elements = extract_page_elements(data)
-            pages.append(PageInfo(name=data.get('Name', Path(entry).stem), page_type='masterPage', path=entry, **elements))
+            pages.append(PageInfo(name=data.get('Name', Path(entry).stem), page_type='masterPage', path=entry, folder='MasterPages', **elements))
         except Exception as e:
-            print(f"Error parsing master page {entry}: {e}")
+            parse_errors.append(f"MasterPage {entry}: {e}")
+
+    # エラーがあった場合はログに記録（将来的にはUIに表示）
+    if parse_errors:
+        for err in parse_errors[:5]:
+            print(f"Warning: {err}")
+        if len(parse_errors) > 5:
+            print(f"... and {len(parse_errors) - 5} more errors")
 
     return pages
 
@@ -1620,10 +1632,12 @@ class LicenseActivationDialog:
         if result['is_valid']:
             self.result = True
             self.dialog.destroy()
+            # expires_atがNoneの場合のセーフガード
+            expiry_str = self.license_manager.expires_at.strftime('%Y年%m月%d日') if self.license_manager.expires_at else '無期限'
             messagebox.showinfo("認証成功",
                 f"ライセンスが正常に認証されました。\n\n"
                 f"プラン: {self.license_manager.tier_name}\n"
-                f"有効期限: {self.license_manager.expires_at.strftime('%Y年%m月%d日')}")
+                f"有効期限: {expiry_str}")
         else:
             self.error_label.config(text=result.get('error', '認証に失敗しました'))
 
