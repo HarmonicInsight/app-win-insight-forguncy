@@ -26,6 +26,15 @@ from tkinter import LEFT, RIGHT, BOTH, END, X, Y, W, E, N, S, VERTICAL, HORIZONT
 from typing import Any, Optional, Dict, List, Tuple
 import webbrowser
 
+# tkinterdnd2 for Drag and Drop support
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES
+    DND_AVAILABLE = True
+    TkRoot = TkinterDnD.Tk  # Use DnD-enabled Tk
+except ImportError:
+    DND_AVAILABLE = False
+    TkRoot = Tk  # Fallback to standard Tk
+
 # python-docx
 from docx import Document
 from docx.shared import Inches, Pt, Cm, RGBColor
@@ -1129,6 +1138,93 @@ def generate_er_mermaid(tables: list) -> str:
 
 
 # =============================================================================
+# Drag and Drop Helper
+# =============================================================================
+
+def register_dnd(widget, on_select_path, highlight_bg='#E0F2FE', normal_bg=None):
+    """
+    Enable Drag and Drop functionality for a widget.
+    
+    Args:
+        widget: The widget to enable DnD on (Entry, Frame, etc.)
+        on_select_path: Callback function(file_path) to be called when a file is dropped
+        highlight_bg: Background color for drag-enter highlight
+        normal_bg: Normal background color (auto-detected if None)
+    """
+    if not DND_AVAILABLE:
+        # DnD not available, silently return without enabling
+        return
+    
+    # Get the original background color
+    if normal_bg is None:
+        try:
+            normal_bg = widget.cget('bg')
+        except:
+            normal_bg = 'white'
+    
+    def on_drop(event):
+        """Handle file drop event"""
+        try:
+            # Parse the dropped file path(s)
+            # event.data contains paths like: {C:/path with space/file.fgcp} or C:/simple/path.fgcp
+            files = widget.tk.splitlist(event.data)
+            
+            if not files:
+                return
+            
+            # Take the first file only
+            file_path = files[0]
+            
+            # Remove curly braces if present
+            file_path = file_path.strip('{}')
+            
+            # Validate .fgcp extension
+            if not file_path.lower().endswith('.fgcp'):
+                messagebox.showerror(
+                    "エラー", 
+                    "Forguncyプロジェクトファイル (.fgcp) を選択してください。\n\n"
+                    f"選択されたファイル: {os.path.basename(file_path)}"
+                )
+                return
+            
+            # Call the callback with the validated file path
+            on_select_path(file_path)
+            
+        except Exception as e:
+            messagebox.showerror("エラー", f"ファイルのドロップ処理中にエラーが発生しました:\n{str(e)}")
+        finally:
+            # Reset background color
+            try:
+                widget.config(bg=normal_bg)
+            except:
+                pass
+    
+    def on_drag_enter(event):
+        """Handle drag enter event - highlight the widget"""
+        try:
+            widget.config(bg=highlight_bg)
+        except:
+            pass
+    
+    def on_drag_leave(event):
+        """Handle drag leave event - restore normal background"""
+        try:
+            widget.config(bg=normal_bg)
+        except:
+            pass
+    
+    # Register the widget as a drop target
+    try:
+        widget.drop_target_register(DND_FILES)
+        widget.dnd_bind('<<Drop>>', on_drop)
+        widget.dnd_bind('<<DragEnter>>', on_drag_enter)
+        widget.dnd_bind('<<DragLeave>>', on_drag_leave)
+    except Exception as e:
+        # Silently fail if DnD binding doesn't work
+        print(f"Warning: Failed to register DnD for widget: {e}")
+
+
+# =============================================================================
 # GUI
 # =============================================================================
 
@@ -1247,7 +1343,7 @@ class LicenseActivationDialog:
 
 
 class ForguncyInsightApp:
-    def __init__(self, root: Tk):
+    def __init__(self, root: TkRoot):
         self.root = root
         self.root.title(f"Forguncy Insight {VERSION_INFO}")
         self.root.geometry("700x550")
@@ -1318,8 +1414,12 @@ class ForguncyInsightApp:
         Label(file_frame, text="プロジェクトファイル (.fgcp):").pack(anchor='w')
         file_input = Frame(file_frame)
         file_input.pack(fill='x', pady=5)
-        Entry(file_input, textvariable=self.file_path, state='readonly').pack(side='left', fill='x', expand=True)
+        self.file_entry = Entry(file_input, textvariable=self.file_path, state='readonly')
+        self.file_entry.pack(side='left', fill='x', expand=True)
         Button(file_input, text="参照...", command=self.browse_file).pack(side='right', padx=(10, 0))
+        
+        # Enable Drag and Drop on file entry
+        register_dnd(self.file_entry, lambda path: self.file_path.set(path))
 
         # 出力フォルダ
         output_frame = Frame(self.tab_analyze)
@@ -1372,15 +1472,23 @@ class ForguncyInsightApp:
         Label(self.tab_diff, text="比較元ファイル (旧バージョン):").pack(anchor='w')
         file1_frame = Frame(self.tab_diff)
         file1_frame.pack(fill='x', pady=5)
-        Entry(file1_frame, textvariable=self.file_path).pack(side='left', fill='x', expand=True)
+        self.file1_entry = Entry(file1_frame, textvariable=self.file_path)
+        self.file1_entry.pack(side='left', fill='x', expand=True)
         Button(file1_frame, text="参照...", command=self.browse_file).pack(side='right', padx=(10, 0))
+        
+        # Enable Drag and Drop on file1 entry
+        register_dnd(self.file1_entry, lambda path: self.file_path.set(path))
 
         # ファイル2
         Label(self.tab_diff, text="比較先ファイル (新バージョン):").pack(anchor='w', pady=(15, 0))
         file2_frame = Frame(self.tab_diff)
         file2_frame.pack(fill='x', pady=5)
-        Entry(file2_frame, textvariable=self.file_path2).pack(side='left', fill='x', expand=True)
+        self.file2_entry = Entry(file2_frame, textvariable=self.file_path2)
+        self.file2_entry.pack(side='left', fill='x', expand=True)
         Button(file2_frame, text="参照...", command=self.browse_file2).pack(side='right', padx=(10, 0))
+        
+        # Enable Drag and Drop on file2 entry
+        register_dnd(self.file2_entry, lambda path: self.file_path2.set(path))
 
         # 比較ボタン
         Button(self.tab_diff, text="差分を比較", command=self.compare_files,
@@ -1623,7 +1731,7 @@ class ForguncyInsightApp:
 
 
 def main():
-    root = Tk()
+    root = TkRoot()
     app = ForguncyInsightApp(root)
     root.mainloop()
 
