@@ -1238,10 +1238,8 @@ class LicenseActivationDialog:
         self.dialog.destroy()
 
     def on_cancel(self):
-        if messagebox.askyesno("終了確認", "アプリケーションを終了しますか？"):
-            self.parent.destroy()
-        else:
-            pass  # ダイアログを閉じない
+        # Free版で続行として扱う
+        self.on_continue_free()
 
     def show(self) -> bool:
         self.dialog.wait_window()
@@ -1260,29 +1258,22 @@ class ForguncyInsightApp:
         self.file_path2 = StringVar()  # 差分比較用
         self.output_dir = StringVar(value=str(Path.home() / "Documents"))
 
-        # 起動時ライセンスチェック
-        self.check_license_on_startup()
-
         self.setup_ui()
 
-        # 期限警告の表示
-        self.show_expiry_warning()
-
-    def check_license_on_startup(self):
-        """起動時にライセンスをチェックし、未認証なら認証ダイアログを表示"""
+        # 起動時ライセンスチェック（UIセットアップ後）
         if not self.license_manager.is_activated:
-            # ウィンドウを更新してから非表示に
-            self.root.update_idletasks()
-            self.root.withdraw()
             self.root.after(100, self._show_license_dialog)
+        else:
+            # 期限警告の表示
+            self.show_expiry_warning()
 
     def _show_license_dialog(self):
         """ライセンスダイアログを表示"""
         dialog = LicenseActivationDialog(self.root, self.license_manager)
-        if dialog.show():
-            self.root.deiconify()
-        else:
-            self.root.destroy()
+        dialog.show()
+        # ダイアログ後にUI更新
+        self.refresh_ui()
+        self.license_status.config(text=f"ライセンス: {self.license_manager.tier_name}")
 
     def show_expiry_warning(self):
         """期限警告を表示"""
