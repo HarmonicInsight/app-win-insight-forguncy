@@ -1358,7 +1358,7 @@ class ForguncyInsightApp:
     def __init__(self, root: Tk):
         self.root = root
         self.root.title(f"Forguncy Insight {VERSION_INFO}")
-        self.root.geometry("800x720")
+        self.root.geometry("800x780")
         self.root.resizable(True, True)
         self.root.configure(bg=COLORS["bg"])
 
@@ -1606,6 +1606,58 @@ class ForguncyInsightApp:
                font=FONTS["heading"], bg=COLORS["success"], fg='white',
                padx=40, pady=12, relief='flat', cursor='hand2').pack(pady=30)
 
+        # 差分タブ用ドラッグ＆ドロップ設定
+        self._setup_diff_dnd()
+
+    def _setup_diff_dnd(self):
+        """差分タブのドラッグ＆ドロップを設定"""
+        if not DND_AVAILABLE:
+            return
+        try:
+            # ファイル1用
+            self.drop_area1.drop_target_register(DND_FILES)
+            self.drop_area1.dnd_bind('<<Drop>>', lambda e: self._on_diff_drop(e, 1))
+            self.drop_area1.dnd_bind('<<DragEnter>>', lambda e: self._on_diff_drag_enter(1))
+            self.drop_area1.dnd_bind('<<DragLeave>>', lambda e: self._on_diff_drag_leave(1))
+            # ファイル2用
+            self.drop_area2.drop_target_register(DND_FILES)
+            self.drop_area2.dnd_bind('<<Drop>>', lambda e: self._on_diff_drop(e, 2))
+            self.drop_area2.dnd_bind('<<DragEnter>>', lambda e: self._on_diff_drag_enter(2))
+            self.drop_area2.dnd_bind('<<DragLeave>>', lambda e: self._on_diff_drag_leave(2))
+        except Exception:
+            pass
+
+    def _on_diff_drop(self, event, file_num):
+        """差分タブでのファイルドロップ処理"""
+        path = event.data
+        if path.startswith('{') and path.endswith('}'):
+            path = path[1:-1]
+        if path.lower().endswith('.fgcp'):
+            if file_num == 1:
+                self.file_path.set(path)
+            else:
+                self.file_path2.set(path)
+            self._update_diff_drop_area(file_num)
+        self._on_diff_drag_leave(file_num)
+
+    def _on_diff_drag_enter(self, file_num):
+        """差分タブでのドラッグ中表示"""
+        area = self.drop_area1 if file_num == 1 else self.drop_area2
+        label = self.drop_label1 if file_num == 1 else self.drop_label2
+        area.configure(bg="#DBEAFE")
+        label.configure(bg="#DBEAFE", fg=COLORS["primary"])
+
+    def _on_diff_drag_leave(self, file_num):
+        """差分タブでのドラッグ離脱時表示"""
+        area = self.drop_area1 if file_num == 1 else self.drop_area2
+        label = self.drop_label1 if file_num == 1 else self.drop_label2
+        path = self.file_path.get() if file_num == 1 else self.file_path2.get()
+        if path:
+            area.configure(bg="#ECFDF5")
+            label.configure(bg="#ECFDF5", fg=COLORS["success"])
+        else:
+            area.configure(bg="#F1F5F9")
+            label.configure(bg="#F1F5F9", fg=COLORS["text_secondary"])
 
     def _browse_diff_file(self, file_num):
         """差分比較用ファイル選択"""
