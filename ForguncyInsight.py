@@ -1825,7 +1825,11 @@ class ForguncyInsightApp:
 
 
 def main():
-    root = Tk()
+    # ドラッグ＆ドロップを有効にするためTkinterDnD.Tk()を使用
+    if DND_AVAILABLE:
+        root = TkinterDnD.Tk()
+    else:
+        root = Tk()
     app = ForguncyInsightApp(root)
     root.mainloop()
 
