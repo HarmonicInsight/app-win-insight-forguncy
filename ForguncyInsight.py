@@ -1249,8 +1249,8 @@ def generate_spec_document(analysis: AnalysisResult, output_dir: str) -> str:
             for i, btn in enumerate(page.buttons):
                 btn_table.rows[i + 1].cells[0].text = btn.name or '(名称なし)'
                 btn_table.rows[i + 1].cells[1].text = _classify_command_type(btn.commands)
-                # 詳細は最初の2つのコマンドを表示
-                detail = ', '.join(btn.commands[:2]) if btn.commands else '-'
+                # 詳細は最初の2つのコマンドのdescriptionを表示
+                detail = ', '.join(cmd.description for cmd in btn.commands[:2]) if btn.commands else '-'
                 if len(detail) > 60:
                     detail = detail[:57] + '...'
                 btn_table.rows[i + 1].cells[2].text = detail
