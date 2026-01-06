@@ -75,14 +75,23 @@ pip install python-docx openpyxl tkinterdnd2
 
 ## EXE化（Windows）
 
-PyInstallerを使用してEXE化できます：
+PyInstallerを使用してEXE化できます。`insight-common` サブモジュールを含めてビルドするため、同梱用の `.spec` ファイルを追加しています。
 
 ```bash
+
+# サブモジュールの取得
+git submodule update --init --recursive
+
+# 依存関係のインストール
+pip install -r requirements.txt
+
 pip install pyinstaller
 pyinstaller --onefile --windowed --name ForguncyInsight ForguncyInsight.py
-```
 
-生成されたEXEは `dist/ForguncyInsight.exe` に出力されます。
+# EXEビルド（1行で再現可能）
+pyinstaller ForguncyInsight.spec
+```
+生成されたEXEは `dist/ForguncyInsight/ForguncyInsight.exe` に出力されます（`--onefile` ではなく onedir 出力）。
 
 ## ファイル構成
 
