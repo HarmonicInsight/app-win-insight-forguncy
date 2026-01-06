@@ -1,10 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
 import pathlib
 
 block_cipher = None
 
-project_dir = pathlib.Path(__file__).resolve().parent
+project_dir = pathlib.Path(os.getcwd()).resolve()
 
 insight_common_datas = [
     ('insight-common/i18n', 'insight-common/i18n'),
@@ -57,4 +58,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
+
     name='ForguncyInsight')
