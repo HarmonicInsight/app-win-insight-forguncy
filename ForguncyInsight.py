@@ -14,9 +14,12 @@ FORGUNCY_VERSION_TESTED = "9.0"  # テスト済みバージョン
 VERSION_INFO = f"v{APP_VERSION} (Forguncy {', '.join(SUPPORTED_FORGUNCY_VERSIONS)} 対応)"
 
 import hashlib
+import importlib
 import json
+import logging
 import os
 import re
+import sys
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -111,6 +114,32 @@ TIER_NAMES = {
     'PRO': 'Pro',
 }
 
+def _add_insight_common_path() -> None:
+    """PyInstaller実行時も含め、insight-common を import できるようにパスを追加する"""
+
+    logger = logging.getLogger('ForguncyInsight')
+    base_dir = Path(__file__).resolve().parent
+
+    candidates = [base_dir / 'insight-common']
+
+    if getattr(sys, 'frozen', False):
+        meipass_base = getattr(sys, '_MEIPASS', None)
+        if meipass_base:
+            candidates.insert(0, Path(meipass_base) / 'insight-common')
+
+    for candidate in candidates:
+        if candidate.exists():
+            candidate_str = str(candidate)
+            if candidate_str not in sys.path:
+                sys.path.insert(0, candidate_str)
+
+    try:
+        importlib.import_module('insight_common')
+    except Exception as exc:  # noqa: BLE001 - ログ出力のみで握りつぶす
+        logger.warning('insight-common の import に失敗しました: %s', exc)
+
+
+_add_insight_common_path()
 
 def _generate_email_hash(email: str) -> str:
     """メールアドレスから4文字のハッシュを生成"""
