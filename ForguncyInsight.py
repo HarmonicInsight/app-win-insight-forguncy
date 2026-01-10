@@ -1708,6 +1708,7 @@ class ForguncyInsightApp:
 
         self.setup_styles()
         self.setup_ui()
+        self.setup_menu()
 
         # 起動時ライセンスチェック（UIセットアップ後）
         if not self.license_manager.is_activated:
@@ -1725,6 +1726,44 @@ class ForguncyInsightApp:
         style.configure("TLabel", background=COLORS["surface"], font=FONTS["body"])
         style.configure("TCheckbutton", background=COLORS["surface"], font=FONTS["body"])
         style.configure("TProgressbar", thickness=8)
+
+    def setup_menu(self):
+        """メニューバーのセットアップ（Windows標準）"""
+        import tkinter as tk
+
+        menu_style = {
+            'font': FONTS["body"],
+            'bg': COLORS["surface"],
+            'fg': COLORS["text"],
+            'activebackground': COLORS["primary"],
+            'activeforeground': '#FFFFFF',
+            'relief': 'flat',
+            'bd': 0,
+        }
+
+        menubar = tk.Menu(self.root, **menu_style)
+        self.root.config(menu=menubar)
+
+        # ヘルプメニュー
+        help_menu = tk.Menu(menubar, tearoff=0, **menu_style)
+        menubar.add_cascade(label="ヘルプ", menu=help_menu)
+        help_menu.add_command(label="ライセンス管理...", command=self._show_license_dialog)
+        help_menu.add_separator()
+        help_menu.add_command(label="バージョン情報", command=self._show_about)
+
+    def _show_about(self):
+        """バージョン情報ダイアログを表示"""
+        about_text = f"""Forguncy Insight
+
+バージョン: {APP_VERSION}
+対応Forguncy: {', '.join(SUPPORTED_FORGUNCY_VERSIONS)}
+
+Forguncyプロジェクト解析・仕様書自動生成ツール
+
+© 2024-2026 Harmonic Insight
+https://h-insight.jp"""
+
+        messagebox.showinfo("バージョン情報", about_text)
 
     def _show_license_dialog(self):
         """ライセンスダイアログを表示"""
