@@ -1445,6 +1445,7 @@ def generate_er_mermaid(tables: list) -> str:
 COLORS = {
     "primary": "#3B82F6",        # ブルー - Unified
     "primary_hover": "#2563EB",  # ダークブルー
+    "title": "#2563EB",          # タイトル色（青）- Unified
     "success": "#10B981",        # グリーン - Unified
     "warning": "#F59E0B",        # オレンジ
     "danger": "#EF4444",         # レッド - Unified
@@ -1808,7 +1809,7 @@ https://h-insight.jp"""
         title_frame.pack(side='left')
 
         Label(title_frame, text="◇ Forguncy Insight", font=FONTS["title"],
-              bg=COLORS["surface"], fg=COLORS["primary"]).pack(side='left')
+              bg=COLORS["surface"], fg=COLORS["title"]).pack(side='left')
 
         Label(title_frame, text=f"  {VERSION_INFO}", font=FONTS["small"],
               bg=COLORS["surface"], fg=COLORS["text_muted"]).pack(side='left', padx=(10, 0))
